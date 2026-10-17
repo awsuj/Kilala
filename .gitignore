@@ -1,0 +1,16 @@
+# Node & TypeScript
+node_modules/
+dist/
+build/
+*.log
+.env
+.DS_Store
+
+# Xcode & iOS
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+.swiftpm/
+DerivedData/
+.build/
+*.xcuserstate
