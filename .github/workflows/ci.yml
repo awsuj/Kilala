@@ -1,0 +1,363 @@
+name: Kilala CI Pipeline
+
+# ==============================================================================
+# Branching Strategy & Triggers:
+# - Primary integration branch: dev
+# - Triggers on:
+#     1. Direct pushes and merges to the `dev` branch.
+#     2. Pull requests targeting the `dev` branch.
+# - Feature branches follow naming convention: type/scope/<name>
+#     (e.g., feat/web-lgu/dashboard, fix/api/qr-verification, chore/mobile/expo-upgrade)
+# ==============================================================================
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # PHASE 1: Setup & Initialization
+  setup:
+    name: Phase 1 - Setup & Initialization
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            **/package-lock.json
+            **/package.json
+
+      - name: Restore dependency cache
+        id: dependency-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            backend/node_modules
+            kilala-web/node_modules
+            kilala-mobile/node_modules
+            mobile/node_modules
+          key: ${{ runner.os }}-dependencies-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dependencies-
+
+      - name: Install Backend API dependencies (Node.js/Express)
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Installing dependencies for Backend API..."
+          if [ -d "backend" ] && [ -f "backend/package.json" ]; then
+            cd backend
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+          fi
+
+      - name: Install Web Portal dependencies (React/Tailwind CSS)
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Installing dependencies for Web Portal..."
+          if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
+            cd kilala-web
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+          elif [ -f "kilala-web/app/components/public/package.json" ]; then
+            cd kilala-web/app/components/public
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+          fi
+
+      - name: Install Mobile App dependencies (React Native/Expo)
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Installing dependencies for Mobile Application..."
+          if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
+            cd kilala-mobile
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+          elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
+            cd mobile
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+          fi
+
+  # PHASE 2: Code Quality & Linting
+  code-quality:
+    name: Phase 2 - Code Quality & Linting
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            backend/node_modules
+            kilala-web/node_modules
+            kilala-mobile/node_modules
+            mobile/node_modules
+          key: ${{ runner.os }}-dependencies-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dependencies-
+
+      - name: Run Code Formatting Check (Prettier)
+        run: |
+          echo "Checking code format across repository..."
+          npx --yes prettier --check "**/*.{ts,tsx,js,jsx,json,css,md}" || true
+
+      - name: Lint Backend API (Node.js/Express)
+        run: |
+          echo "Linting Backend API..."
+          if [ -d "backend" ] && [ -f "backend/package.json" ]; then
+            cd backend
+            npm run lint --if-present
+            if [ -f "tsconfig.json" ]; then
+              npx tsc --noEmit
+            fi
+          fi
+
+      - name: Lint Web Portal (React/Tailwind CSS)
+        run: |
+          echo "Linting Web Portal..."
+          if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
+            cd kilala-web
+            npm run lint --if-present
+          elif [ -f "kilala-web/app/components/public/package.json" ]; then
+            cd kilala-web/app/components/public
+            npm run lint --if-present
+          fi
+
+      - name: Lint Mobile Application (React Native/Expo)
+        run: |
+          echo "Linting React Native/Expo Mobile App..."
+          if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
+            cd kilala-mobile
+            npm run lint --if-present
+          elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
+            cd mobile
+            npm run lint --if-present
+          fi
+
+  # PHASE 3: Automated Unit Testing
+  unit-testing:
+    name: Phase 3 - Automated Unit Testing
+    needs: code-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            backend/node_modules
+            kilala-web/node_modules
+            kilala-mobile/node_modules
+            mobile/node_modules
+          key: ${{ runner.os }}-dependencies-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dependencies-
+
+      - name: Run Backend Unit Tests
+        run: |
+          echo "Executing Backend Core Unit Tests..."
+          if [ -d "backend" ] && [ -f "backend/package.json" ]; then
+            cd backend
+            npm test --if-present
+          fi
+
+      - name: Run Web Portal Unit Tests
+        run: |
+          echo "Executing Web Portal Unit Tests..."
+          if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
+            cd kilala-web
+            npm test --if-present -- --watchAll=false
+          elif [ -f "kilala-web/app/components/public/package.json" ]; then
+            cd kilala-web/app/components/public
+            npm test --if-present -- --watchAll=false
+          fi
+
+      - name: Run Mobile Application Unit Tests
+        run: |
+          echo "Executing Mobile Application Unit Tests..."
+          if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
+            cd kilala-mobile
+            npm test --if-present -- --watchAll=false
+          elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
+            cd mobile
+            npm test --if-present -- --watchAll=false
+          fi
+
+  # PHASE 4: Application Build
+  application-build:
+    name: Phase 4 - Application Build
+    needs: unit-testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            backend/node_modules
+            kilala-web/node_modules
+            kilala-mobile/node_modules
+            mobile/node_modules
+          key: ${{ runner.os }}-dependencies-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dependencies-
+
+      - name: Build Backend API (Node.js/Express)
+        run: |
+          echo "Compiling Node.js API..."
+          if [ -d "backend" ] && [ -f "backend/package.json" ]; then
+            cd backend
+            npm run build
+          fi
+
+      - name: Build Web Portal (React/Tailwind CSS)
+        run: |
+          echo "Building React / Tailwind CSS Web Application..."
+          if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
+            cd kilala-web
+            npm run build --if-present
+          elif [ -f "kilala-web/app/components/public/package.json" ]; then
+            cd kilala-web/app/components/public
+            npm run build
+          fi
+
+      - name: Build Mobile Application (React Native/Expo)
+        run: |
+          echo "Compiling Expo Mobile Application bundle..."
+          if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
+            cd kilala-mobile
+            if command -v npx >/dev/null 2>&1; then
+              npx expo export --output-dir dist || npm run build --if-present
+            else
+              npm run build --if-present
+            fi
+          elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
+            cd mobile
+            if command -v npx >/dev/null 2>&1; then
+              npx expo export --output-dir dist || npm run build --if-present
+            else
+              npm run build --if-present
+            fi
+          fi
+
+      - name: Archive Backend Build Artifacts
+        if: hashFiles('backend/dist/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: backend/dist/
+          retention-days: 7
+
+      - name: Archive Web Portal Build Artifacts
+        if: hashFiles('kilala-web/build/**', 'kilala-web/dist/**', 'kilala-web/app/components/public/dist/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-portal-dist
+          path: |
+            kilala-web/build/
+            kilala-web/dist/
+            kilala-web/app/components/public/dist/
+          retention-days: 7
+
+  # PHASE 5: Integration Testing
+  integration-testing:
+    name: Phase 5 - Integration Testing
+    needs: application-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            backend/node_modules
+            kilala-web/node_modules
+            kilala-mobile/node_modules
+            mobile/node_modules
+          key: ${{ runner.os }}-dependencies-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dependencies-
+
+      - name: Download Backend Build Artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: backend-dist
+          path: backend/dist
+
+      - name: Start Backend API Service
+        run: |
+          echo "Starting Backend API Service in background..."
+          cd backend
+          # Build if not restored from artifact
+          if [ ! -d "dist" ]; then
+            npm run build
+          fi
+          PORT=5000 npm start &
+          echo "BACKEND_PID=$!" >> $GITHUB_ENV
+
+      - name: Verify API Health Endpoint
+        run: |
+          echo "Polling Backend API health endpoint (http://localhost:5000/api/health)..."
+          timeout 30 bash -c 'until curl --silent --fail http://localhost:5000/api/health; do sleep 2; echo "Waiting for Backend API to become ready..."; done'
+          echo "Backend API is up and healthy!"
+
+      - name: Run Integration Tests (Frontend-to-Backend Communication)
+        run: |
+          echo "Running Integration Tests..."
+          # Test Web Portal communication with Backend API
+          if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
+            cd kilala-web
+            npm run test:integration --if-present
+          fi
+
+          # Test Backend Integration Endpoint Suite
+          if [ -d "backend" ] && [ -f "backend/package.json" ]; then
+            cd backend
+            npm run test:integration --if-present
+          fi
