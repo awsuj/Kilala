@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './db';
@@ -87,5 +87,39 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Middleware to protect routes
+const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) return res.sendStatus(401);
+  
+  const JWT_SECRET = process.env.JWT_SECRET!;
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    (req as any).user = user;
+    next();
+  });
+};
+
+// Fetch Cardholder Profile
+app.get('/api/cardholder/me', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const result = await pool.query(
+      'SELECT * FROM cardholder_profiles WHERE user_id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+    
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
 });
