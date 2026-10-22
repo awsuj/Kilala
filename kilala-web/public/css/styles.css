@@ -1,0 +1,175 @@
+/* ==========================================================================
+   Kilala LGU Portal — brand styles
+   Based on Kilala Brand Guidelines v0.1 (STSWENG Group 014)
+   ========================================================================== */
+
+:root {
+  /* Brand palette */
+  --kilala-green: #0e5b4a;   /* Primary — buttons, headers */
+  --kilala-green-dark: #11201b; /* Body text / headings */
+  --slate: #3d4d47;          /* Secondary text, labels */
+  --sunrise: #f4b740;        /* Accent — highlights (dark text only) */
+  --surface: #e3eee9;        /* Cards / surfaces */
+  --app-bg: #f6f4ee;         /* App background (cream) */
+  --reversed: #cfe3dc;       /* Text/elements reversed on green */
+  --border: #d6ddd9;         /* Borders / dividers */
+  --white: #ffffff;
+  --error: #b3261e;
+  --error-bg: #fbe3e1;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font-sans: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--kilala-green-dark);
+  background: var(--app-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Auth / login layout ---------- */
+
+.auth {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth__card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 36px;
+  box-shadow: 0 12px 32px rgba(17, 32, 27, 0.06);
+}
+
+.brand {
+  margin-bottom: 28px;
+}
+
+.brand__logo {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--kilala-green);
+  line-height: 1;
+}
+
+.brand__tagline {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--slate);
+  margin-left: 2px;
+}
+
+.brand__subtitle {
+  margin-top: 12px;
+  font-size: 15px;
+  color: var(--slate);
+}
+
+/* ---------- Form ---------- */
+
+.field { margin-bottom: 18px; }
+
+.field__label {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--kilala-green-dark);
+  margin-bottom: 6px;
+}
+
+.field__input {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  color: var(--kilala-green-dark);
+  background: var(--app-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field__input:focus {
+  outline: none;
+  border-color: var(--kilala-green);
+  box-shadow: 0 0 0 3px rgba(14, 91, 74, 0.15);
+  background: var(--white);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--white);
+  background: var(--kilala-green);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn:hover { background: #0b4a3c; }
+.btn:active { background: #093c31; }
+
+.auth__footer {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.link {
+  font-size: 14px;
+  color: var(--slate);
+  text-decoration: none;
+}
+.link:hover { color: var(--kilala-green); text-decoration: underline; }
+
+/* ---------- Alerts ---------- */
+
+.alert {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 20px;
+}
+
+.alert--error {
+  color: var(--error);
+  background: var(--error-bg);
+  border: 1px solid rgba(179, 38, 30, 0.25);
+}
+
+/* ---------- Placeholder dashboard (temporary) ---------- */
+
+.placeholder {
+  max-width: 640px;
+  margin: 80px auto;
+  padding: 40px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.placeholder h1 { color: var(--kilala-green); margin-top: 0; }
+.placeholder .mono { font-family: var(--font-mono); color: var(--slate); }

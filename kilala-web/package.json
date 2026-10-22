@@ -1,7 +1,7 @@
 {
   "name": "kilala-web",
   "version": "1.0.0",
-  "description": "LGU Web Portal for Kilala",
+  "description": "LGU Web Portal for Kilala (Express + TypeScript + EJS)",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -9,10 +9,13 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts"
   },
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
     "express": "^4.19.2"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.8",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.24",
     "ts-node-dev": "^2.0.0",
