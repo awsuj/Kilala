@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;0,800;1,400&family=Atkinson+Hyperlegible+Mono:wght@400;600&display=swap');
+@import "tailwindcss";
+
+/* ==========================================================================
+   Kilala brand tokens — Brand Guidelines v0.1 (STSWENG Group 014)
+   Exposed to Tailwind v4 via @theme so utilities like bg-kilala-green,
+   text-slate-ink, border-hairline, font-sans, etc. are generated.
+   ========================================================================== */
+@theme {
+  --color-kilala-green: #0e5b4a;      /* Primary — buttons, headers */
+  --color-kilala-green-700: #0b4a3c;  /* hover */
+  --color-kilala-green-800: #093c31;  /* active */
+  --color-ink: #11201b;               /* Body text / headings */
+  --color-slate-ink: #3d4d47;         /* Secondary text, labels */
+  --color-sunrise: #f4b740;           /* Accent — highlights (dark text only) */
+  --color-surface: #e3eee9;           /* Cards / surfaces */
+  --color-app-bg: #f6f4ee;            /* App background (cream) */
+  --color-reversed: #cfe3dc;          /* Text/elements reversed on green */
+  --color-hairline: #d6ddd9;          /* Borders / dividers */
+  --color-danger: #b3261e;            /* Error */
+  --color-danger-bg: #fbe3e1;         /* Error surface */
+
+  --font-sans: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+}
+
+body {
+  background: var(--color-app-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
