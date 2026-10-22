@@ -18,11 +18,8 @@ struct ContentView: View {
                     self.session = nil
                 }
             case .business:
-                VStack(spacing: 16) {
-                    Text("Business Scanner Portal")
-                        .font(.title2.bold())
-                    Text("Logged in as: \(session.user.email)")
-                    Button("Logout") { self.session = nil }
+                QRScannerView(token: session.token) {
+                    self.session = nil
                 }
             case .lguAdmin:
                 VStack(spacing: 16) {
