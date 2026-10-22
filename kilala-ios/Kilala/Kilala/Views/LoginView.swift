@@ -9,40 +9,57 @@ struct LoginView: View {
     @State private var isLoading = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Kilala")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            TextField("Email", text: $email)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .autocapitalization(.none)
-                .keyboardType(.emailAddress)
-            
-            SecureField("Password", text: $password)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .font(.footnote)
-            }
-            
-            Button(action: performLogin) {
-                if isLoading {
-                    ProgressView()
-                } else {
-                    Text("Login")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
+        NavigationStack {
+            VStack(spacing: 20) {
+                Spacer()
+                
+                Text("Kilala")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                TextField("Email", text: $email)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .autocapitalization(.none)
+                    .keyboardType(.emailAddress)
+                
+                SecureField("Password", text: $password)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.footnote)
+                }
+                
+                Button(action: performLogin) {
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Text("Login")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                }
+                .disabled(isLoading || email.isEmpty || password.isEmpty)
+                
+                Spacer()
+                
+                Divider()
+                
+                NavigationLink {
+                    BusinessSignupView(onRegistrationSuccess: onLoginSuccess)
+                } label: {
+                    Text("Register your Business")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .padding(.vertical, 8)
                 }
             }
-            .disabled(isLoading || email.isEmpty || password.isEmpty)
+            .padding()
         }
-        .padding()
     }
     
     private func performLogin() {
