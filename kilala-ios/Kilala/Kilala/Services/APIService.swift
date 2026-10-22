@@ -69,6 +69,38 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(CardholderProfile.self, from: data)
     }
+    
+    func verifyScan(qrToken: String, token: String) async throws -> VerificationResponse {
+        guard let url = URL(string: "\(baseURL)/verify/scan") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let body = ["qr_token": qrToken]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // The backend returns 200 for recognized cards (active, expired, or revoked)
+        // and 404 with a VerificationResponse body for unrecognized/counterfeit QR codes.
+        if (200...299).contains(httpResponse.statusCode) || httpResponse.statusCode == 404 {
+            if let verificationResponse = try? JSONDecoder().decode(VerificationResponse.self, from: data) {
+                return verificationResponse
+            }
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        return try JSONDecoder().decode(VerificationResponse.self, from: data)
+    }
 }
-
-
