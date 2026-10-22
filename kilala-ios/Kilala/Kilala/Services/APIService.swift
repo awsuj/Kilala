@@ -48,5 +48,27 @@ class APIService {
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         return loginResponse
     }
+    
+    func getCardholderProfile(token: String) async throws -> CardholderProfile {
+        guard let url = URL(string: "\(baseURL)/cardholder/me") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(CardholderProfile.self, from: data)
+    }
 }
+
 

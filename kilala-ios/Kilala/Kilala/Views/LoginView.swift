@@ -1,13 +1,8 @@
-//
-//  LoginView.swift
-//  Kilala
-//
-//  Created by Joshua Calibo on 10/21/26.
-//
-
 import SwiftUI
 
 struct LoginView: View {
+    var onLoginSuccess: (LoginResponse) -> Void
+    
     @State private var email = ""
     @State private var password = ""
     @State private var errorMessage: String? = nil
@@ -57,22 +52,12 @@ struct LoginView: View {
         Task {
             do {
                 let response = try await APIService.shared.login(email: email, password: password)
-                
-                // For now, we will just print it to prove it works.
-                // Later, we will save this to the Keychain and navigate to the ID View.
-                print("✅ Login Successful!")
-                print("User: \(response.user.email)")
-                print("Token: \(response.token)")
-                
                 isLoading = false
+                onLoginSuccess(response)
             } catch {
-                errorMessage = "Failed to login. Check credentials and server."
+                errorMessage = "Invalid credentials or server offline."
                 isLoading = false
             }
         }
     }
-}
-
-#Preview {
-    LoginView()
 }
