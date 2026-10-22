@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<%- include('partials/head', { title: 'Dashboard · Kilala LGU Portal' }) %>
+<body>
+  <main class="placeholder">
+    <h1>You're signed in</h1>
+    <p>Magandang araw po, <strong><%= user.email %></strong></p>
+    <p class="mono">role: <%= user.role %></p>
+    <p>The dashboard is coming in the next milestone
+      (<span class="mono">feat/web-lgu/dashboard</span>).</p>
+    <form method="POST" action="/logout">
+      <button class="btn" type="submit" style="max-width: 200px; margin: 16px auto 0;">Log out</button>
+    </form>
+  </main>
+</body>
+</html>
