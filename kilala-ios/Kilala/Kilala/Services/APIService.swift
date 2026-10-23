@@ -13,11 +13,30 @@ struct LoginResponse: Codable {
     let user: User
 }
 
+enum APIError: LocalizedError {
+    case conflict(String)
+    case badRequest(String)
+    case serverError(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .conflict(let message),
+             .badRequest(let message),
+             .serverError(let message):
+            return message
+        }
+    }
+}
+
+private struct BackendErrorBody: Codable {
+    let error: String
+}
+
 class APIService {
     static let shared = APIService()
     
     // IMPORTANT: If running on a physical iPhone, change "localhost" to your Mac's IPv4 address (e.g., "192.168.1.15")
-    private let baseURL = "http://localhost:5001/api"
+    private let baseURL =  "http://localhost:5001/api" // "http://192.168.0.150:5001/api"
     
     private init() {} // Prevent multiple instances
     
@@ -103,4 +122,64 @@ class APIService {
         
         return try JSONDecoder().decode(VerificationResponse.self, from: data)
     }
+    
+    func fetchLGUs() async throws -> [LGU] {
+        guard let url = URL(string: "\(baseURL)/lgus") else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode([LGU].self, from: data)
+    }
+    
+    func registerBusiness(payload: [String: Any]) async throws -> BusinessRegistrationResponse {
+        guard let url = URL(string: "\(baseURL)/auth/register-business") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "An account with this email or business permit number already exists."
+            )
+        }
+        
+        if httpResponse.statusCode == 400 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "Please fill in all required business registration fields."
+            )
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to complete business registration. Please try again."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(BusinessRegistrationResponse.self, from: data)
+    }
 }
+
