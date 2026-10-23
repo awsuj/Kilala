@@ -181,5 +181,58 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(BusinessRegistrationResponse.self, from: data)
     }
+
+    func verifyRecord(
+        privilegeType: String,
+        cardIdNumber: String,
+        firstName: String,
+        middleName: String,
+        lastName: String,
+        dateOfBirth: String
+    ) async throws -> SignupVerificationResponse {
+        guard let url = URL(string: "\(baseURL)/auth/verify-record") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "privilege_type": privilegeType,
+            "card_id_number": cardIdNumber,
+            "first_name": firstName,
+            "middle_name": middleName,
+            "last_name": lastName,
+            "date_of_birth": dateOfBirth
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 400 || httpResponse.statusCode == 404 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(backendError?.error ?? "Unable to verify record. Please check your details.")
+        }
+        
+        if httpResponse.statusCode == 403 || httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(backendError?.error ?? "This account cannot be claimed.")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(SignupVerificationResponse.self, from: data)
+    }
+
 }
 

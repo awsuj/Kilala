@@ -45,6 +45,14 @@ struct LoginView: View {
                 }
                 .disabled(isLoading || email.isEmpty || password.isEmpty)
                 
+                NavigationLink {
+                    CardholderSignupView()
+                } label: {
+                    Text("Create new account")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                
                 Spacer()
                 
                 Divider()

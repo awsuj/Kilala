@@ -8,12 +8,18 @@
 import SwiftUI
 
 struct CardholderSignupView: View {
-    @State private var privilege_type: PrivilegeType = .pwd
-    @State private var card_id_number: String = ""
-    @State private var first_name: String = ""
-    @State private var middle_name: String = ""
-    @State private var last_name: String = ""
-    @State private var date_of_birth: Date = Date()
+    @State private var privilegeType: PrivilegeType = .pwd
+    @State private var cardIdNumber: String = ""
+    @State private var firstName: String = ""
+    @State private var middleName: String = ""
+    @State private var lastName: String = ""
+    @State private var dateOfBirth: Date = Date()
+    
+    // Backend integration states
+    @State private var isLoading: Bool = false
+    @State private var errorMessage: String? = nil
+    @State private var verifiedProfile: SignupVerificationResponse? = nil
+    @State private var isVerified: Bool = false
     
     enum PrivilegeType: String {
         case pwd = "PWD"
@@ -52,17 +58,17 @@ struct CardholderSignupView: View {
                         OptionCardView(
                             title: "PWD",
                             icon: "figure.roll",
-                            isSelected: privilege_type == .pwd
+                            isSelected: privilegeType == .pwd
                         ) {
-                            privilege_type = .pwd
+                            privilegeType = .pwd
                         }
                         
                         OptionCardView(
                             title: "Senior Citizen",
                             icon: "figure.walk",
-                            isSelected: privilege_type == .seniorCitizen
+                            isSelected: privilegeType == .seniorCitizen
                         ) {
-                            privilege_type = .seniorCitizen
+                            privilegeType = .seniorCitizen
                         }
                     }
                     .padding(.horizontal, 20)
@@ -76,21 +82,21 @@ struct CardholderSignupView: View {
                     Text("First Name")
                         .font(.footnote)
                         .fontWeight(.bold)
-                    CustomTextField(text: $first_name)
+                    CustomTextField(text: $firstName)
                 }
                 // middle name
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Middle Name")
                         .font(.footnote)
                         .fontWeight(.bold)
-                    CustomTextField(text: $middle_name)
+                    CustomTextField(text: $middleName)
                 }
                 // last name
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Last Name")
                         .font(.footnote)
                         .fontWeight(.bold)
-                    CustomTextField(text: $last_name)
+                    CustomTextField(text: $lastName)
                 }
                 
                 // card number
@@ -98,7 +104,7 @@ struct CardholderSignupView: View {
                     Text("Physical Card Number")
                         .font(.footnote)
                         .fontWeight(.bold)
-                    CustomTextField(text: $card_id_number)
+                    CustomTextField(text: $cardIdNumber)
                 }
                 
                 // date of birth
@@ -107,7 +113,7 @@ struct CardholderSignupView: View {
                         .font(.footnote)
                         .fontWeight(.bold)
                     HStack {
-                        DatePicker("Select date", selection: $date_of_birth, displayedComponents: .date)
+                        DatePicker("Select date", selection: $dateOfBirth, displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .labelsHidden()
                             .environment(\.locale, Locale(identifier: "en_PH"))
@@ -125,25 +131,96 @@ struct CardholderSignupView: View {
                     )
                 }
                 
-                // submit
-                Button(action: {
-                    print("Verifying \(card_id_number) for \(first_name) \(last_name) ...")
-                }) {
-                    Text("Verify Record")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color(white: 0.25))
-                        .cornerRadius(8)
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
+                
+                if isVerified, let profile = verifiedProfile {
+                    Text("Verified: \(profile.firstName) \(profile.lastName)!")
+                        .font(.footnote)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.green)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                
+                // submit
+                Button(action: handleVerifyRecord) {
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color(white: 0.25))
+                            .cornerRadius(8)
+                    } else {
+                        Text("Verify Record")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color(white: 0.25))
+                            .cornerRadius(8)
+                    }
+                }
+                .disabled(isLoading)
                 .padding(.top, 10)
                 .padding(.bottom, 40)
             }
             .padding(.horizontal, 20)
         }
-        .navigationBarHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private func handleVerifyRecord() {
+        errorMessage = nil
+        isVerified = false
+        
+        let trimmedFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMiddle = middleName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCardId = cardIdNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !trimmedFirst.isEmpty, !trimmedLast.isEmpty, !trimmedCardId.isEmpty else {
+            errorMessage = "Please fill in your first name, last name, and physical card number."
+            return
+        }
+        
+        isLoading = true
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let formattedDOB = formatter.string(from: dateOfBirth)
+        
+        Task {
+            do {
+                let response = try await APIService.shared.verifyRecord(
+                    privilegeType: privilegeType.rawValue,
+                    cardIdNumber: trimmedCardId,
+                    firstName: trimmedFirst,
+                    middleName: trimmedMiddle,
+                    lastName: trimmedLast,
+                    dateOfBirth: formattedDOB
+                )
+                
+                await MainActor.run {
+                    self.verifiedProfile = response
+                    self.isLoading = false
+                    self.isVerified = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                }
+            }
+        }
     }
 }
 

@@ -184,7 +184,7 @@ app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
         // Success
         res.status(200).json({
             message: 'Record verified successfully',
-            profile_id: profile.profile_id,
+            profile_id: profile.id,
             first_name: profile.first_name,
             middle_name: profile.middle_name,
             last_name: profile.last_name
