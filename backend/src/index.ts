@@ -136,6 +136,65 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
+// 2.1.1 Verify LGU Record
+app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
+    const {
+        privilege_type,
+        card_id_number,
+        first_name,
+        middle_name,
+        last_name,
+        date_of_birth
+    } = req.body;
+    
+    if (!privilege_type || !card_id_number || !first_name || !last_name || !date_of_birth) {
+        return res.status(400).json({ error: 'All fields are required for verification' });
+    }
+    
+    try {
+        // Check if a record matches the provided details
+        const profileRes = await pool.query(
+            `SELECT id, user_id, first_name, last_name, status 
+            FROM cardholder_profiles 
+            WHERE lgu_id_number = $1 
+                AND privilege_type = $2 
+                AND date_of_birth = $3 
+                AND first_name ILIKE $4 
+                AND last_name ILIKE $5
+                AND COALESCE(middle_name, '') ILIKE $6`,
+            [card_id_number, privilege_type, date_of_birth, first_name, last_name, middle_name || '' ]
+        );
+        
+        if (profileRes.rows.length === 0) {
+            return res.status(404).json({ error: 'No matching LGU record found. Please check your details.' });
+        }
+        
+        const profile = profileRes.rows[0];
+        
+        // Check if card is still active
+        if (profile.status !== 'ACTIVE') {
+            return res.status(403).json({ error: `Cannot claim account. Card status is ${profile.status}.` });
+        }
+        
+        // Check if card is not yet claimed by another user
+        if (profile.user_id) {
+            return res.status(409).json({ error: 'This ID has already been claimed by an existing account.' });
+        }
+        
+        // Success
+        res.status(200).json({
+            message: 'Record verified successfully',
+            profile_id: profile.profile_id,
+            first_name: profile.first_name,
+            middle_name: profile.middle_name,
+            last_name: profile.last_name
+        });
+    } catch (error) {
+        console.error('Verify record error: ', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // 2.2 Claim Pre-Registered Cardholder Account on iOS
 // When an LGU registers a Senior/PWD without an account, the citizen can claim it on iOS
 app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
