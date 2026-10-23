@@ -29,6 +29,7 @@ struct CardholderSignupView: View {
                         .font(.title)
                         .fontWeight(.bold)
                         .foregroundColor(.black)
+                        .padding(.bottom, 4)
                     
                     Divider()
                         .background(Color.gray)
@@ -100,9 +101,9 @@ struct CardholderSignupView: View {
                     CustomTextField(text: $card_id_number)
                 }
                 
-                // birth date
+                // date of birth
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Birth Date")
+                    Text("Date of Birth")
                         .font(.footnote)
                         .fontWeight(.bold)
                     HStack {
@@ -111,12 +112,15 @@ struct CardholderSignupView: View {
                             .labelsHidden()
                             .environment(\.locale, Locale(identifier: "en_PH"))
                         Spacer()
+                        Image(systemName: "calendar")
+                            .foregroundColor(.gray)
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 8)
                     .background(Color(white: 0.92))
+                    .cornerRadius(8)
                     .overlay(
-                        Rectangle()
+                        RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.6), lineWidth: 1)
                     )
                 }
@@ -127,10 +131,12 @@ struct CardholderSignupView: View {
                 }) {
                     Text("Verify Record")
                         .font(.subheadline)
+                        .fontWeight(.bold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color(white: 0.25))
+                        .cornerRadius(8)
                 }
                 .padding(.top, 10)
                 .padding(.bottom, 40)
@@ -166,8 +172,9 @@ struct OptionCardView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .background(Color.white)
+                .cornerRadius(8)
                 .overlay(
-                    Rectangle()
+                    RoundedRectangle(cornerRadius: 8)
                         .stroke(isSelected ? Color.gray.opacity(0.4) : Color.clear, lineWidth: 1)
                 )
             }
@@ -184,31 +191,11 @@ struct CustomTextField: View {
             .padding(.vertical, 12)
             .padding(.horizontal, 8)
             .background(Color(white: 0.92))
+            .cornerRadius(8)
             .overlay(
-                Rectangle()
+                RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.gray.opacity(0.6), lineWidth: 1)
             )
-    }
-}
-
-struct UploadBoxView: View {
-    var placeholder: String
-    
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(Color(white: 0.92))
-                .overlay(
-                    Rectangle()
-                        .stroke(Color.gray.opacity(0.6), lineWidth: 1)
-                )
-            
-            Text(placeholder)
-                .foregroundColor(.gray)
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-        }
-        .frame(height: 120)
     }
 }
 
