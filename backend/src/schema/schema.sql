@@ -141,3 +141,16 @@ CREATE TRIGGER trg_cardholders_updated_at
 CREATE TRIGGER trg_businesses_updated_at
     BEFORE UPDATE ON business_profiles
     FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+-- 5. Transactions (Merchant Discounted Bill Recording)
+CREATE TABLE transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cardholder_id UUID NOT NULL REFERENCES cardholder_profiles(id) ON DELETE CASCADE,
+    original_amount DECIMAL(10, 2) NOT NULL,
+    discounted_amount DECIMAL(10, 2) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_transactions_business_created_at ON transactions(business_id, created_at DESC);
+
