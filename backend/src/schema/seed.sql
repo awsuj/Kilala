@@ -57,3 +57,33 @@ INSERT INTO business_profiles (
     'Mercury Drug', 'Glorietta 4 Branch', 'PHARMACY',
     'MKT-BP-2026-99102', '000-123-456-001', 'Glorietta 4, Ayala Center, Makati City'
 );
+
+-- 6. Insert Sample Transactions
+INSERT INTO transactions (
+    id, business_id, cardholder_id, original_amount, discounted_amount, created_at
+) VALUES
+(
+    '66666666-6666-6666-6666-666666666661',
+    '22222222-2222-2222-2222-222222222224',
+    '44444444-4444-4444-4444-444444444441',
+    1500.00,
+    1200.00,
+    CURRENT_TIMESTAMP - INTERVAL '2 days'
+),
+(
+    '66666666-6666-6666-6666-666666666662',
+    '22222222-2222-2222-2222-222222222224',
+    '44444444-4444-4444-4444-444444444442',
+    850.00,
+    680.00,
+    CURRENT_TIMESTAMP - INTERVAL '1 day'
+),
+(
+    '66666666-6666-6666-6666-666666666663',
+    '22222222-2222-2222-2222-222222222224',
+    '44444444-4444-4444-4444-444444444441',
+    250.00,
+    200.00,
+    CURRENT_TIMESTAMP
+);
+
