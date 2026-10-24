@@ -91,6 +91,21 @@ struct QRScannerView: View {
                     
                     Spacer()
                     
+                    NavigationLink(destination: BusinessTransactionHistoryView()) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.arrow.circlepath")
+                            Text("View Transaction History")
+                                .fontWeight(.semibold)
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(12)
+                    }
+                    .padding(.bottom, 8)
+                    
                     #if targetEnvironment(simulator)
                     // Simulator Fallback for testing without a physical camera
                     VStack(alignment: .leading, spacing: 10) {
@@ -132,31 +147,40 @@ struct QRScannerView: View {
             .navigationTitle("Merchant Scanner")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink(destination: BusinessTransactionHistoryView()) {
+                        Label("History", systemImage: "clock.arrow.circlepath")
+                    }
+                }
                 if let onLogout = onLogout {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button("Logout", action: onLogout)
                     }
                 }
             }
+            .onAppear {
+                APIService.shared.authToken = token
+            }
             .sheet(item: $scanResult) { result in
                 ScanResultSheet(result: result) {
                     scanResult = nil
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large, .medium])
                 .presentationDragIndicator(.visible)
             }
         }
     }
     
     private func verifyQRToken(_ qrToken: String) {
-        guard !isVerifying && scanResult == nil else { return }
+        let trimmedToken = qrToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty && !isVerifying && scanResult == nil else { return }
         
         isVerifying = true
         errorMessage = nil
         
         Task {
             do {
-                let response = try await APIService.shared.verifyScan(qrToken: qrToken, token: token)
+                let response = try await APIService.shared.verifyScan(qrToken: trimmedToken, token: token)
                 let feedback = UINotificationFeedbackGenerator()
                 feedback.notificationOccurred(response.isValid ? .success : .error)
                 isVerifying = false
@@ -167,199 +191,6 @@ struct QRScannerView: View {
                 isVerifying = false
                 errorMessage = "Unable to verify QR code. Check your connection or business accreditation."
             }
-        }
-    }
-}
-
-// MARK: - Scan Result Sheet
-
-struct ScanResultSheet: View {
-    let result: VerificationResponse
-    let onDismiss: () -> Void
-    
-    private var themeColor: Color {
-        result.isValid ? .green : .red
-    }
-    
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Status Banner Header
-                    VStack(spacing: 10) {
-                        Image(systemName: result.isValid ? "checkmark.seal.fill" : "xmark.octagon.fill")
-                            .font(.system(size: 56))
-                            .foregroundColor(.white)
-                        
-                        Text(result.isValid ? "VERIFIED" : "INVALID / REVOKED")
-                            .font(.title2.weight(.heavy))
-                            .tracking(1)
-                            .foregroundColor(.white)
-                        
-                        Text(result.message)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.95))
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .padding(.horizontal, 16)
-                    .background(themeColor.gradient)
-                    .cornerRadius(20)
-                    
-                    // Cardholder Details Card
-                    if let cardholder = result.cardholderSummary {
-                        VStack(spacing: 16) {
-                            // Cardholder Photo & Primary Identity
-                            HStack(spacing: 16) {
-                                CardholderAvatarView(photoUrl: cardholder.photoUrl, borderColor: themeColor)
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(cardholder.fullName)
-                                        .font(.title3.bold())
-                                        .foregroundColor(.primary)
-                                    
-                                    Text(cardholder.lguName.uppercased())
-                                        .font(.caption.weight(.bold))
-                                        .foregroundColor(.secondary)
-                                    
-                                    Text(cardholder.lguIdNumber)
-                                        .font(.system(.subheadline, design: .monospaced).weight(.semibold))
-                                        .foregroundColor(themeColor)
-                                }
-                                
-                                Spacer()
-                            }
-                            
-                            Divider()
-                            
-                            // Metadata Rows
-                            VStack(spacing: 10) {
-                                DetailRow(label: "LGU", value: cardholder.lguName)
-                                DetailRow(label: "ID Number", value: cardholder.lguIdNumber)
-                                DetailRow(
-                                    label: "Privilege Type",
-                                    value: cardholder.privilegeType.replacingOccurrences(of: "_", with: " ")
-                                )
-                                
-                                if let disabilityType = cardholder.disabilityType, !disabilityType.isEmpty {
-                                    DetailRow(label: "Disability Type", value: disabilityType)
-                                }
-                                
-                                DetailRow(label: "Card Status", value: cardholder.status, valueColor: themeColor)
-                            }
-                        }
-                        .padding(18)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(themeColor.opacity(0.35), lineWidth: 1.5)
-                        )
-                    } else {
-                        // Unrecognized / Counterfeit QR Code Fallback
-                        VStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.largeTitle)
-                                .foregroundColor(.red)
-                            
-                            Text("No Matching Cardholder Record")
-                                .font(.headline)
-                            
-                            Text("This QR code is not registered in the Kilala database or has been rotated by the cardholder. Do not honor mandatory discount privileges for this scan.")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(20)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(16)
-                    }
-                    
-                    Button(action: onDismiss) {
-                        Text(result.isValid ? "Scan Next Customer" : "Dismiss & Scan Again")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(themeColor)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                    }
-                    .padding(.top, 4)
-                }
-                .padding()
-            }
-            .navigationTitle("Verification Result")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done", action: onDismiss)
-                }
-            }
-        }
-    }
-}
-
-private struct CardholderAvatarView: View {
-    let photoUrl: String?
-    let borderColor: Color
-    
-    var body: some View {
-        Group {
-            if let photoUrl = photoUrl,
-               !photoUrl.isEmpty,
-               let url = URL(string: photoUrl) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        placeholderIcon
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        placeholderIcon
-                    }
-                }
-            } else {
-                placeholderIcon
-            }
-        }
-        .frame(width: 72, height: 72)
-        .background(Color(.tertiarySystemBackground))
-        .clipShape(Circle())
-        .overlay(
-            Circle()
-                .stroke(borderColor, lineWidth: 2.5)
-        )
-    }
-    
-    private var placeholderIcon: some View {
-        Image(systemName: "person.crop.circle.fill")
-            .resizable()
-            .scaledToFit()
-            .foregroundColor(.secondary)
-            .padding(6)
-    }
-}
-
-private struct DetailRow: View {
-    let label: String
-    let value: String
-    var valueColor: Color = .primary
-    
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(valueColor)
         }
     }
 }

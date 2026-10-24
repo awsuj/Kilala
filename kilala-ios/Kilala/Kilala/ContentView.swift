@@ -15,17 +15,22 @@ struct ContentView: View {
             switch session.user.role {
             case .cardholder:
                 DigitalIDView(token: session.token) {
+                    APIService.shared.authToken = nil
                     self.session = nil
                 }
             case .business:
                 QRScannerView(token: session.token) {
+                    APIService.shared.authToken = nil
                     self.session = nil
                 }
             case .lguAdmin:
                 VStack(spacing: 16) {
                     Text("Please use the Kilala Web Portal for LGU Admin access.")
                         .multilineTextAlignment(.center)
-                    Button("Logout") { self.session = nil }
+                    Button("Logout") {
+                        APIService.shared.authToken = nil
+                        self.session = nil
+                    }
                 }
                 .padding()
             }
