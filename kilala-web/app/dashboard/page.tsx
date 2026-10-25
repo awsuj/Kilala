@@ -1,11 +1,32 @@
-import { UserPlus, Store, Flag, FileCheck } from "lucide-react";
-import StatCard from "../components/StatCard";
+import {
+  Users,
+  Store,
+  ClipboardList,
+  Flag,
+  UserPlus,
+  FileCheck,
+} from "lucide-react";
+import StatCard from "@/app/components/StatCard";
+import RegistrationsChart from "@/app/components/RegistrationsChart";
 
 const stats = [
-  { label: "Registered Cardholders", value: "12,480" },
-  { label: "Businesses", value: "356" },
-  { label: "Pending Applications", value: "42" },
-  { label: "Flagged Records", value: "7" },
+  { label: "Registered Cardholders", value: "12,480", icon: Users },
+  { label: "Businesses", value: "356", icon: Store },
+  {
+    label: "Pending Applications",
+    value: "42",
+    icon: ClipboardList,
+    href: "/dashboard/applications",
+    hint: "Review applications",
+    featured: true,
+  },
+  {
+    label: "Flagged Records",
+    value: "7",
+    icon: Flag,
+    href: "/dashboard/records",
+    hint: "Review flagged records",
+  },
 ];
 
 const registrations = [
@@ -34,65 +55,47 @@ const activity = [
 ];
 
 export default function DashboardPage() {
-  const max = Math.max(...registrations.map((r) => r.count));
-
   return (
-    <div className="space-y-6">
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <section
+        aria-label="Summary"
+        className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:grid-rows-2 xl:col-span-2"
+      >
         {stats.map((s) => (
-          <StatCard key={s.label} label={s.label} value={s.value} />
+          <StatCard key={s.label} {...s} />
         ))}
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {/* Chart */}
-        <section className="rounded-xl border border-hairline bg-white p-4 xl:col-span-2">
-          <h2 className="text-base font-bold text-ink">
-            Registrations over time
-          </h2>
+      <section className="rounded-2xl bg-surface p-5">
+        <h2 className="text-base font-semibold text-ink">Recent Activity</h2>
 
-          <div className="mt-4 flex h-44 items-end gap-2">
-            {registrations.map((r) => (
-              <div
-                key={r.month}
-                className="flex h-full flex-1 flex-col items-center justify-end"
-              >
-                <span className="mb-1 text-sm font-bold text-ink">
-                  {r.count}
-                </span>
-                <div
-                  className="w-8 rounded-t-md bg-kilala-green"
-                  style={{ height: `${(r.count / max) * 75}%` }}
-                />
-                <span className="mt-1 text-sm text-slate-ink">{r.month}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Recent activity */}
-        <section className="rounded-xl border border-hairline bg-white p-4">
-          <h2 className="text-base font-bold text-ink">Recent Activity</h2>
-
-          <ul className="mt-3 space-y-3">
+        {activity.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-ink">No recent activity.</p>
+        ) : (
+          <ul
+            tabIndex={0}
+            aria-label="Recent activity list"
+            className="mt-4 space-y-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kilala-green xl:max-h-72 xl:overflow-y-auto xl:pr-2 xl:[scrollbar-width:thin]"
+          >
             {activity.map((a) => {
               const Icon = a.icon;
               return (
                 <li key={a.title} className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface text-kilala-green">
-                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-kilala-green">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
                   </div>
                   <div>
-                    <p className="text-sm text-ink">{a.title}</p>
+                    <p className="text-sm font-medium text-ink">{a.title}</p>
                     <p className="text-sm text-slate-ink">{a.time}</p>
                   </div>
                 </li>
               );
             })}
           </ul>
-        </section>
-      </div>
+        )}
+      </section>
+
+      <RegistrationsChart data={registrations} className="xl:col-span-3" />
     </div>
   );
 }
