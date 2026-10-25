@@ -5,8 +5,8 @@ import { Search, Bell } from "lucide-react";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/dashboard/applications": "Applications",
   "/dashboard/records": "Records",
+  "/dashboard/businesses": "Businesses",
   "/dashboard/reports": "Reports",
   "/dashboard/settings": "Settings",
 };
