@@ -11,8 +11,8 @@ import { logoutAction } from "@/app/dashboard/actions";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
-  { label: "Applications", href: "/dashboard/applications" },
   { label: "Records", href: "/dashboard/records" },
+  { label: "Businesses", href: "/dashboard/businesses" },
   { label: "Reports", href: "/dashboard/reports" },
   { label: "Settings", href: "/dashboard/settings" },
 ];
