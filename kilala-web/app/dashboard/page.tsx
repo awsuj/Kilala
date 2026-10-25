@@ -1,101 +1,127 @@
+import DashboardOverview from "./dashboard-overview";
 import {
-  Users,
-  Store,
-  ClipboardList,
-  Flag,
-  UserPlus,
-  FileCheck,
-} from "lucide-react";
-import StatCard from "@/app/components/StatCard";
-import RegistrationsChart from "@/app/components/RegistrationsChart";
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 
-const stats = [
-  { label: "Registered Cardholders", value: "12,480", icon: Users },
-  { label: "Businesses", value: "356", icon: Store },
-  {
-    label: "Pending Applications",
-    value: "42",
-    icon: ClipboardList,
-    href: "/dashboard/applications",
-    hint: "Review applications",
-    featured: true,
-  },
-  {
-    label: "Flagged Records",
-    value: "7",
-    icon: Flag,
-    href: "/dashboard/records",
-    hint: "Review flagged records",
-  },
+const barangays = [
+  { name: "Poblacion", district: "District 1", registered: "2,540", active: "92%", type: "PWD", total: "2,336", trend: [4, 6, 5, 7, 8, 7, 9], up: true },
+  { name: "Bel-Air", district: "District 1", registered: "1,980", active: "88%", type: "Senior", total: "1,742", trend: [8, 7, 7, 6, 5, 6, 5], up: false },
+  { name: "San Lorenzo", district: "District 1", registered: "1,640", active: "90%", type: "PWD", total: "1,476", trend: [3, 4, 5, 5, 6, 7, 8], up: true },
+  { name: "Guadalupe", district: "District 2", registered: "1,420", active: "85%", type: "Senior", total: "1,207", trend: [5, 6, 6, 7, 7, 8, 9], up: true },
+  { name: "Pembo", district: "District 2", registered: "1,150", active: "81%", type: "PWD", total: "931", trend: [7, 6, 6, 5, 5, 4, 4], up: false },
 ];
 
-const registrations = [
-  { month: "Jan", count: 820 },
-  { month: "Feb", count: 940 },
-  { month: "Mar", count: 1100 },
-  { month: "Apr", count: 980 },
-  { month: "May", count: 1350 },
-  { month: "Jun", count: 1500 },
-  { month: "Jul", count: 1720 },
-];
-
-const activity = [
-  { icon: UserPlus, title: "New PWD card registered", time: "5 minutes ago" },
-  {
-    icon: Store,
-    title: "Business verified: Tinuhog Ni Benny",
-    time: "1 hour ago",
-  },
-  { icon: Flag, title: "Record flagged for review", time: "3 hours ago" },
-  {
-    icon: FileCheck,
-    title: "Senior citizen application approved",
-    time: "Yesterday",
-  },
-];
+function Sparkline({ data, up }: { data: number[]; up: boolean }) {
+  const w = 76;
+  const h = 26;
+  const pad = 2;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const pts = data
+    .map((v, i) => {
+      const x = pad + (i * (w - pad * 2)) / (data.length - 1);
+      const y = pad + (h - pad * 2) * (1 - (v - min) / (max - min || 1));
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={up ? "var(--color-valid)" : "var(--color-danger)"} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export default function DashboardPage() {
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-      <section
-        aria-label="Summary"
-        className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:grid-rows-2 xl:col-span-2"
-      >
-        {stats.map((s) => (
-          <StatCard key={s.label} {...s} />
-        ))}
-      </section>
+    <div className="space-y-6">
+      {/* Interactive stat cards + chart + highlight panel */}
+      <DashboardOverview />
 
-      <section className="rounded-2xl bg-surface p-5">
-        <h2 className="text-base font-semibold text-ink">Recent Activity</h2>
+      {/* Data table + summary */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle>Cardholders by Barangay</CardTitle>
+            <CardAction>
+              <Badge variant="outline">All barangays</Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Barangay</TableHead>
+                  <TableHead>Registered</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead>Trend</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {barangays.map((b) => (
+                  <TableRow key={b.name}>
+                    <TableCell>
+                      <p className="font-bold text-foreground">{b.name}</p>
+                      <p className="text-xs text-muted-foreground">{b.district}</p>
+                    </TableCell>
+                    <TableCell className="font-mono">{b.registered}</TableCell>
+                    <TableCell className="font-mono">{b.active}</TableCell>
+                    <TableCell>
+                      <Sparkline data={b.trend} up={b.up} />
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-medium text-muted-foreground">
+                        {b.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-bold">{b.total}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-        {activity.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-ink">No recent activity.</p>
-        ) : (
-          <ul
-            tabIndex={0}
-            aria-label="Recent activity list"
-            className="mt-4 space-y-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kilala-green xl:max-h-72 xl:overflow-y-auto xl:pr-2 xl:[scrollbar-width:thin]"
-          >
-            {activity.map((a) => {
-              const Icon = a.icon;
-              return (
-                <li key={a.title} className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-kilala-green">
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-ink">{a.title}</p>
-                    <p className="text-sm text-slate-ink">{a.time}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <RegistrationsChart data={registrations} className="xl:col-span-3" />
+        {/* Summary card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>This month</CardTitle>
+            <CardDescription>Verification activity</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div>
+              <p className="text-3xl font-extrabold tracking-tight text-foreground">98.2%</p>
+              <p className="mt-1 text-sm text-muted-foreground">Valid scan rate</p>
+            </div>
+            <Separator />
+            <div>
+              <p className="text-3xl font-extrabold tracking-tight text-foreground">4,210</p>
+              <p className="mt-1 text-sm text-muted-foreground">New registrations</p>
+            </div>
+            <Separator />
+            <div>
+              <p className="text-3xl font-extrabold tracking-tight text-primary">28%</p>
+              <p className="mt-1 text-sm text-muted-foreground">Avg. discount applied</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

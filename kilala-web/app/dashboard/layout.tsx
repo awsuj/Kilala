@@ -1,17 +1,20 @@
-import Sidebar from "@/app/components/Sidebar";
-import TopBar from "@/app/components/TopBar";
+import Sidebar from "../components/Sidebar";
+import TopBar from "../components/TopBar";
+import { getCurrentUser } from "@/lib/session";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getCurrentUser();
+
   return (
-    <div className="flex min-h-screen gap-6 bg-app-bg p-4">
-      <Sidebar />
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar adminEmail={user?.email} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 pb-4 pt-2">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );

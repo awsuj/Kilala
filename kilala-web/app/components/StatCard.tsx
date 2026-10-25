@@ -1,60 +1,85 @@
-import Link from "next/link";
-import { ArrowRight, type LucideIcon } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 type StatCardProps = {
   label: string;
   value: string;
-  icon: LucideIcon;
-  href?: string;
-  hint?: string;
-  featured?: boolean;
+  delta?: string;
+  deltaDir?: "up" | "down";
+  spark?: number[];
+  /** Which bar to highlight (follows chart hover). Defaults to the last. */
+  activeIndex?: number;
+  /** When set (e.g. on chart hover), replaces the delta line with context. */
+  note?: string;
 };
+
+/** Mini bar sparkline — the bar at activeIndex is the accent. */
+function Sparkbars({ data, activeIndex }: { data: number[]; activeIndex: number }) {
+  const max = Math.max(...data);
+  const w = 5;
+  const gap = 3;
+  const h = 44;
+  const totalW = data.length * (w + gap) - gap;
+
+  return (
+    <svg
+      width={totalW}
+      height={h}
+      viewBox={`0 0 ${totalW} ${h}`}
+      className="shrink-0"
+      aria-hidden="true"
+    >
+      {data.map((v, i) => {
+        const bh = Math.max(3, (v / max) * h);
+        const active = i === activeIndex;
+        return (
+          <rect
+            key={i}
+            x={i * (w + gap)}
+            y={h - bh}
+            width={w}
+            height={bh}
+            rx={1.5}
+            fill={active ? "var(--color-primary)" : "rgba(14,91,74,0.18)"}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 export default function StatCard({
   label,
   value,
-  icon: Icon,
-  href,
-  hint,
-  featured = false,
+  delta,
+  deltaDir = "up",
+  spark,
+  activeIndex,
+  note,
 }: StatCardProps) {
-  return (
-    <div
-      className={`flex h-full flex-col justify-between rounded-2xl p-5 ${
-        featured ? "bg-kilala-green text-white" : "bg-white text-ink shadow-sm"
-      }`}
-    >
-      <div
-        className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-          featured ? "bg-white/15 text-white" : "bg-surface text-kilala-green"
-        }`}
-      >
-        <Icon className="h-5 w-5" aria-hidden="true" />
-      </div>
+  const deltaCls =
+    deltaDir === "up" ? "text-[var(--color-valid)]" : "text-destructive";
+  const ai = activeIndex ?? (spark ? spark.length - 1 : 0);
 
-      <div className="mt-4">
-        <p
-          className={`text-sm ${featured ? "text-reversed" : "text-slate-ink"}`}
-        >
-          {label}
-        </p>
-        <div className="mt-1 flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
-          <p className="text-3xl font-semibold tabular-nums">{value}</p>
-          {href && hint && (
-            <Link
-              href={href}
-              className={`inline-flex items-center gap-1 rounded-sm pb-1 text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                featured
-                  ? "text-white focus-visible:outline-white"
-                  : "text-kilala-green hover:text-kilala-green-700 focus-visible:outline-kilala-green"
-              }`}
-            >
-              {hint}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          )}
+  return (
+    <Card className="gap-0 p-5">
+      <p className="text-sm font-bold text-muted-foreground">{label}</p>
+
+      <div className="mt-4 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-3xl font-extrabold leading-none tracking-tight">
+            {value}
+          </p>
+          {note ? (
+            <p className="mt-2 text-xs font-bold text-muted-foreground">{note}</p>
+          ) : delta ? (
+            <p className={`mt-2 text-xs font-bold ${deltaCls}`}>
+              {deltaDir === "up" ? "▲" : "▼"} {delta}{" "}
+              <span className="text-muted-foreground">than last month</span>
+            </p>
+          ) : null}
         </div>
+        {spark && <Sparkbars data={spark} activeIndex={ai} />}
       </div>
-    </div>
+    </Card>
   );
 }
