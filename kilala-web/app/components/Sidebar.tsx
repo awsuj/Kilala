@@ -1,7 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogOut, ChevronsLeft, ChevronsRight } from "lucide-react";
+import Logo from "./Logo";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { logoutAction } from "@/app/dashboard/actions";
 
 const navItems = [
@@ -12,19 +17,51 @@ const navItems = [
   { label: "Settings", href: "/dashboard/settings" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ adminEmail }: { adminEmail?: string | null }) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const email = adminEmail || "admin@lgu.gov.ph";
+  const initials = email.slice(0, 2).toUpperCase();
+
+  // Retracted → just a floating button to bring the nav back.
+  if (collapsed) {
+    return (
+      <div className="m-4 self-start">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Open navigation"
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-sidebar-accent"
+        >
+          <ChevronsRight className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <aside className="flex w-60 flex-col border-r border-hairline bg-surface p-4">
-      {/* Logo block */}
-      <div>
-        <p className="text-2xl font-bold text-kilala-green">KILALA</p>
-        <p className="text-sm text-slate-ink">LGU Portal</p>
+    <aside className="m-4 flex w-64 shrink-0 flex-col rounded-2xl border border-border bg-sidebar p-4 shadow-sm">
+      {/* Logo + retract */}
+      <div className="flex items-start justify-between px-2">
+        <div>
+          <Logo />
+          <p className="mt-1 text-sm text-muted-foreground">LGU Portal</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          aria-label="Retract navigation"
+          className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+        >
+          <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Nav */}
-      <nav className="mt-8">
+      <nav className="mt-8 flex-1">
+        <p className="px-3 pb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          Navigation
+        </p>
         <ul className="space-y-1">
           {navItems.map((item) => {
             const isActive =
@@ -37,10 +74,10 @@ export default function Sidebar() {
                 <Link
                   href={item.href}
                   aria-current={isActive ? "page" : undefined}
-                  className={`block rounded-lg border-l-4 px-4 py-2 ${
+                  className={`block rounded-lg px-3.5 py-2.5 text-sm font-bold transition-colors ${
                     isActive
-                      ? "border-white bg-kilala-green font-bold text-white"
-                      : "border-transparent text-ink hover:bg-white"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   }`}
                 >
                   {item.label}
@@ -51,13 +88,24 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* Bottom: mt-auto pushes this down */}
-      <div className="mt-auto">
-        <p>Admin</p>
-        <form action={logoutAction}>
-          <button type="submit" className="text-kilala-green underline">
+      {/* Admin footer */}
+      <div className="mt-6 rounded-xl border border-border bg-muted p-3">
+        <div className="flex items-center gap-3">
+          <Avatar className="h-9 w-9">
+            <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-foreground">LGU Admin</p>
+            <p className="truncate text-xs text-muted-foreground">{email}</p>
+          </div>
+        </div>
+        <form action={logoutAction} className="mt-3">
+          <Button type="submit" variant="outline" className="w-full bg-card font-bold">
+            <LogOut className="h-4 w-4" aria-hidden="true" />
             Log out
-          </button>
+          </Button>
         </form>
       </div>
     </aside>
