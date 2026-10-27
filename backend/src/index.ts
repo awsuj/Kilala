@@ -484,6 +484,8 @@ app.post(
       return res.status(400).json({ error: 'qr_token is required' });
     }
 
+    const cleanedToken = String(qr_token).trim();
+
     try {
       // 1. Verify the scanning business is accredited
       const bizRes = await pool.query(
@@ -500,13 +502,19 @@ app.post(
         return res.status(403).json({ error: 'Business accreditation is currently inactive' });
       }
 
-      // 2. Look up cardholder by QR token
+      // 2. Look up cardholder by QR token (supporting exact qr_secret_token, lgu_id_number, and KILALA-QR token patterns)
       const cardRes = await pool.query(
         `SELECT cp.*, l.municipality_name AS lgu_name
          FROM cardholder_profiles cp
          JOIN lgus l ON l.id = cp.lgu_id
-         WHERE cp.qr_secret_token = $1`,
-        [qr_token]
+         WHERE UPPER(TRIM(cp.qr_secret_token)) = UPPER($1)
+            OR UPPER(TRIM(cp.lgu_id_number)) = UPPER($1)
+            OR UPPER($1) LIKE '%' || UPPER(TRIM(cp.lgu_id_number)) || '%'
+            OR UPPER($1) LIKE '%' || REGEXP_REPLACE(UPPER(TRIM(cp.lgu_id_number)), '-[0-9]{4}-', '-') || '%'
+            OR cp.id::text = $1
+            OR cp.user_id::text = $1
+         LIMIT 1`,
+        [cleanedToken]
       );
 
       if (cardRes.rows.length === 0) {
@@ -612,6 +620,107 @@ app.get(
     }
   }
 );
+
+// 4.4 Record a Discounted Transaction
+app.post(
+  '/api/transactions/record',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  async (req: AuthRequest, res: Response) => {
+    const { cardholder_id, original_amount, discounted_amount } = req.body;
+    const businessId = req.user!.id;
+
+    if (
+      !cardholder_id ||
+      original_amount === undefined ||
+      discounted_amount === undefined ||
+      isNaN(Number(original_amount)) ||
+      isNaN(Number(discounted_amount))
+    ) {
+      return res.status(400).json({
+        error: 'cardholder_id, original_amount, and discounted_amount are required'
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `INSERT INTO transactions (
+           business_id, cardholder_id, original_amount, discounted_amount
+         ) VALUES ($1, $2, $3, $4)
+         RETURNING id, business_id, cardholder_id, original_amount, discounted_amount, created_at`,
+        [businessId, cardholder_id, Number(original_amount), Number(discounted_amount)]
+      );
+
+      const row = result.rows[0];
+      res.status(201).json({
+        message: 'Transaction recorded successfully',
+        id: row.id,
+        business_id: row.business_id,
+        cardholder_id: row.cardholder_id,
+        original_amount: Number(row.original_amount),
+        discounted_amount: Number(row.discounted_amount),
+        created_at: row.created_at
+      });
+    } catch (error) {
+      console.error('Error recording transaction:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// 4.5 Get Business Transaction History
+app.get(
+  '/api/transactions/business',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  async (req: AuthRequest, res: Response) => {
+    const businessId = req.user!.id;
+
+    try {
+      const result = await pool.query(
+        `SELECT t.id,
+                t.business_id,
+                t.cardholder_id,
+                t.original_amount,
+                t.discounted_amount,
+                t.created_at,
+                cp.first_name,
+                cp.middle_name,
+                cp.last_name,
+                cp.lgu_id_number,
+                cp.privilege_type
+         FROM transactions t
+         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+         WHERE t.business_id = $1
+         ORDER BY t.created_at DESC`,
+        [businessId]
+      );
+
+      const transactions = result.rows.map((row) => ({
+        id: row.id,
+        business_id: row.business_id,
+        cardholder_id: row.cardholder_id,
+        cardholder_name: [row.first_name, row.middle_name, row.last_name]
+          .filter(Boolean)
+          .join(' '),
+        first_name: row.first_name,
+        middle_name: row.middle_name,
+        last_name: row.last_name,
+        lgu_id_number: row.lgu_id_number,
+        privilege_type: row.privilege_type,
+        original_amount: Number(row.original_amount),
+        discounted_amount: Number(row.discounted_amount),
+        created_at: row.created_at
+      }));
+
+      res.status(200).json(transactions);
+    } catch (error) {
+      console.error('Error fetching business transactions:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 
 // ============================================================================
 // 5. LGU ADMIN PORTAL ROUTES (Web Application)

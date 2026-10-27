@@ -36,7 +36,8 @@ class APIService {
     static let shared = APIService()
     
     // IMPORTANT: If running on a physical iPhone, change "localhost" to your Mac's IPv4 address (e.g., "192.168.1.15")
-    private let baseURL =  "http://localhost:5001/api" // "http://192.168.0.150:5001/api"
+    private let baseURL =  "http://localhost:5001/api" //http://address:5001/api"
+    var authToken: String?
     
     private init() {} // Prevent multiple instances
     
@@ -65,10 +66,12 @@ class APIService {
         
         // Decode the successful JSON response
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
+        self.authToken = loginResponse.token
         return loginResponse
     }
     
     func getCardholderProfile(token: String) async throws -> CardholderProfile {
+        self.authToken = token
         guard let url = URL(string: "\(baseURL)/cardholder/me") else {
             throw URLError(.badURL)
         }
@@ -90,6 +93,8 @@ class APIService {
     }
     
     func verifyScan(qrToken: String, token: String) async throws -> VerificationResponse {
+        let activeToken = token.isEmpty ? (self.authToken ?? "") : token
+        self.authToken = activeToken
         guard let url = URL(string: "\(baseURL)/verify/scan") else {
             throw URLError(.badURL)
         }
@@ -97,9 +102,9 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
         
-        let body = ["qr_token": qrToken]
+        let body = ["qr_token": qrToken.trimmingCharacters(in: .whitespacesAndNewlines)]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -179,7 +184,9 @@ class APIService {
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(BusinessRegistrationResponse.self, from: data)
+        let registrationResponse = try decoder.decode(BusinessRegistrationResponse.self, from: data)
+        self.authToken = registrationResponse.token
+        return registrationResponse
     }
 
     func verifyRecord(
@@ -234,5 +241,72 @@ class APIService {
         return try decoder.decode(SignupVerificationResponse.self, from: data)
     }
 
+    func recordTransaction(
+        cardholderId: String,
+        originalAmount: Double,
+        discountedAmount: Double
+    ) async throws -> TransactionRecordResponse {
+        guard let url = URL(string: "\(baseURL)/transactions/record") else {
+            throw URLError(.badURL)
+        }
+        guard let token = authToken else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let payload = TransactionRecordRequest(
+            cardholderId: cardholderId,
+            originalAmount: originalAmount,
+            discountedAmount: discountedAmount
+        )
+        request.httpBody = try JSONEncoder().encode(payload)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to record transaction. Please try again."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(TransactionRecordResponse.self, from: data)
+    }
+
+    func fetchBusinessTransactions() async throws -> [TransactionHistoryItem] {
+        guard let url = URL(string: "\(baseURL)/transactions/business") else {
+            throw URLError(.badURL)
+        }
+        guard let token = authToken else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to fetch business transactions."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode([TransactionHistoryItem].self, from: data)
+    }
+
 }
+
 
