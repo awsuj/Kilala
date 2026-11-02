@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   // Don't auto-generate AGENTS.md into the repo.
   agentRules: false,
   turbopack: {
+    root: process.cwd(),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
