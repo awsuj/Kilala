@@ -1,0 +1,752 @@
+{
+  "info": {
+    "_postman_id": "2f193cb7-7a62-4995-88b9-cd9f8c8ac9c1",
+    "name": "Kilala API - Sprint 1 QA",
+    "description": "Sprint 1 scope: database connectivity smoke check, login/signup API contracts, JWT authentication, and authorization. CI/CD is not included because it is unchecked in the sprint checklist. Requests that create accounts or claim records require dedicated test data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Health & PostgreSQL Connection",
+      "description": "Health endpoint and a database-backed LGU lookup. A successful /api/lgus response verifies that the API can query PostgreSQL.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health",
+            "description": "Public health endpoint."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('Health response identifies the API as healthy', function () {",
+                  "  pm.expect(body.status).to.eql('healthy');",
+                  "  pm.expect(body.system).to.eql('Kilala Backend API');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List LGUs - PostgreSQL Read Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/lgus",
+            "description": "Database-backed read. A 200 response and array payload indicate the backend completed the PostgreSQL query."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('LGU list request succeeds', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Response is an array', function () { pm.expect(pm.response.json()).to.be.an('array'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Login",
+      "description": "Unified login API and its validation/error contracts.",
+      "item": [
+        {
+          "name": "Login - Valid Credentials",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Set loginEmail and loginPassword to an existing test account. The returned token is saved according to the user's role.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{loginEmail}}\",\n  \"password\": \"{{loginPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const required = ['loginEmail', 'loginPassword'];",
+                  "const missing = required.filter((key) => !pm.environment.get(key));",
+                  "if (missing.length) {",
+                  "  console.log('Skipping request. Set these environment variables first: ' + missing.join(', '));",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login returns HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('Response contains the agreed login fields', function () {",
+                  "  pm.expect(body.message).to.eql('Login successful');",
+                  "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.user).to.be.an('object');",
+                  "  pm.expect(body.user).to.have.property('id');",
+                  "  pm.expect(body.user.email).to.be.a('string');",
+                  "  pm.expect(['CARDHOLDER', 'BUSINESS', 'LGU_ADMIN']).to.include(body.user.role);",
+                  "});",
+                  "if (body.token && body.user) {",
+                  "  const role = body.user.role;",
+                  "  if (role === 'CARDHOLDER') pm.environment.set('cardholderToken', body.token);",
+                  "  if (role === 'BUSINESS') pm.environment.set('businessToken', body.token);",
+                  "  if (role === 'LGU_ADMIN') pm.environment.set('lguToken', body.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - Invalid Credentials",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Uses deliberately invalid credentials; safe to repeat.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"invalid.qa.user@example.test\",\n  \"password\": \"WrongPassword123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid credentials return HTTP 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Error response contains error message', function () { pm.expect(pm.response.json().error).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - Missing Fields",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Checks required-field validation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"\",\n  \"password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing login fields return HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('Error response is descriptive', function () { pm.expect(pm.response.json().error).to.eql('Email and password are required'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 - Cardholder Signup",
+      "description": "Cardholder onboarding consists of verifying an existing LGU-issued record, then claiming that record. Claiming creates a user and links it to the profile, so use a dedicated unclaimed test record.",
+      "item": [
+        {
+          "name": "Verify Record - Valid Test Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify-record",
+            "description": "Set verify* environment variables to a real, active, unclaimed test record. This request does not create an account.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"privilege_type\": \"{{verifyPrivilegeType}}\",\n  \"card_id_number\": \"{{verifyCardIdNumber}}\",\n  \"first_name\": \"{{verifyFirstName}}\",\n  \"middle_name\": \"{{verifyMiddleName}}\",\n  \"last_name\": \"{{verifyLastName}}\",\n  \"date_of_birth\": \"{{verifyDateOfBirth}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const required = ['verifyPrivilegeType', 'verifyCardIdNumber', 'verifyFirstName', 'verifyLastName', 'verifyDateOfBirth'];",
+                  "const missing = required.filter((key) => !pm.environment.get(key));",
+                  "if (missing.length) {",
+                  "  console.log('Skipping request. Set these environment variables first: ' + missing.join(', '));",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Matching LGU record returns HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('Verified response contains profile details', function () {",
+                  "  pm.expect(body.message).to.eql('Record verified successfully');",
+                  "  pm.expect(body.profile_id).to.exist;",
+                  "  pm.expect(body.first_name).to.be.a('string');",
+                  "  pm.expect(body.last_name).to.be.a('string');",
+                  "});",
+                  "if (body.profile_id) pm.environment.set('verifiedProfileId', String(body.profile_id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Record - Missing Fields",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify-record",
+            "description": "Checks required-field validation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"privilege_type\": \"\",\n  \"card_id_number\": \"\",\n  \"first_name\": \"\",\n  \"last_name\": \"\",\n  \"date_of_birth\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing required verification fields return HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('Correct validation error is returned', function () { pm.expect(pm.response.json().error).to.eql('All fields are required for verification'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Claim Cardholder - Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/claim-cardholder",
+            "description": "Creates a cardholder user and links the unclaimed LGU record. Run once only with a dedicated test record and unique email.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lgu_id_number\": \"{{claimLguIdNumber}}\",\n  \"date_of_birth\": \"{{claimDateOfBirth}}\",\n  \"email\": \"{{claimEmail}}\",\n  \"password\": \"{{claimPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const required = ['claimLguIdNumber', 'claimDateOfBirth', 'claimEmail', 'claimPassword'];",
+                  "const missing = required.filter((key) => !pm.environment.get(key));",
+                  "if (missing.length) {",
+                  "  console.log('Skipping request. Set these environment variables first: ' + missing.join(', '));",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cardholder claim returns HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.test('Claim response contains a cardholder JWT and user', function () {",
+                  "  pm.expect(body.message).to.eql('Cardholder account claimed successfully');",
+                  "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.user.role).to.eql('CARDHOLDER');",
+                  "});",
+                  "if (body.token) pm.environment.set('cardholderToken', body.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 - Business Signup",
+      "description": "Business signup creates a user and business profile. Use a dedicated test email, unique permit number, and valid LGU id. This request writes to the database.",
+      "item": [
+        {
+          "name": "Register Business - Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/register-business",
+            "description": "Creates a BUSINESS account. Run once with dedicated test values; duplicate email or permit number returns 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{businessSignupEmail}}\",\n  \"password\": \"{{businessSignupPassword}}\",\n  \"lgu_id\": \"{{lguId}}\",\n  \"business_name\": \"{{businessName}}\",\n  \"branch_name\": \"{{businessBranchName}}\",\n  \"category\": \"{{businessCategory}}\",\n  \"business_permit_no\": \"{{businessPermitNo}}\",\n  \"tin_number\": \"{{tinNumber}}\",\n  \"address\": \"{{businessAddress}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const required = ['businessSignupEmail', 'businessSignupPassword', 'lguId', 'businessName', 'businessPermitNo', 'tinNumber', 'businessAddress'];",
+                  "const missing = required.filter((key) => !pm.environment.get(key));",
+                  "if (missing.length) {",
+                  "  console.log('Skipping request. Set these environment variables first: ' + missing.join(', '));",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Business registration returns HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.test('Business registration response contains token and business profile', function () {",
+                  "  pm.expect(body.message).to.eql('Business registered successfully');",
+                  "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.user.role).to.eql('BUSINESS');",
+                  "  pm.expect(body.businessProfile).to.be.an('object');",
+                  "});",
+                  "if (body.token) pm.environment.set('businessToken', body.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 - JWT Authentication & Authorization",
+      "description": "Protected cardholder route used to validate JWT behavior and role enforcement.",
+      "item": [
+        {
+          "name": "Protected Route - Valid Cardholder Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cardholderToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/cardholder/me",
+            "description": "Requires a valid CARDHOLDER token. Populate cardholderToken by running cardholder login or claim signup first."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('A valid cardholder token grants access', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Protected Route - Missing Token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/cardholder/me",
+            "description": "No Authorization header should return 401.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing token returns HTTP 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Correct authentication error is returned', function () { pm.expect(pm.response.json().error).to.eql('Access token required'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Protected Route - Invalid Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid.jwt.token",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/cardholder/me",
+            "description": "An invalid token should return 403."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid token returns HTTP 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Correct token error is returned', function () { pm.expect(pm.response.json().error).to.eql('Invalid or expired token'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Protected Route - Wrong Role",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{businessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/cardholder/me",
+            "description": "Use a valid BUSINESS or LGU_ADMIN token. The route requires CARDHOLDER and should return 403."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('businessToken')) {",
+                  "  const crypto = require('crypto-js');",
+                  "  const base64url = (value) => crypto.enc.Base64.stringify(value).replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "  const header = base64url(crypto.enc.Utf8.parse(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));",
+                  "  const payload = base64url(crypto.enc.Utf8.parse(JSON.stringify({ id: 'qa-business-user', email: 'qa.business@example.test', role: 'BUSINESS', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 })));",
+                  "  const signature = base64url(crypto.HmacSHA256(header + '.' + payload, 'supersecretkilalakey'));",
+                  "  pm.environment.set('businessToken', header + '.' + payload + '.' + signature);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wrong role returns HTTP 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Correct authorization error is returned', function () { pm.expect(pm.response.json().error).to.eql('Forbidden: Insufficient permissions'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Protected Route - Expired Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{expiredToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/cardholder/me",
+            "description": "Set expiredToken to a previously valid JWT that has expired. Do not use a random malformed token for this case."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('expiredToken')) {",
+                  "  const crypto = require('crypto-js');",
+                  "  const base64url = (value) => crypto.enc.Base64.stringify(value).replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "  const header = base64url(crypto.enc.Utf8.parse(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));",
+                  "  const now = Math.floor(Date.now() / 1000);",
+                  "  const payload = base64url(crypto.enc.Utf8.parse(JSON.stringify({ id: 'expired-qa-user', email: 'expired@example.test', role: 'CARDHOLDER', iat: now - 7200, exp: now - 3600 })));",
+                  "  const signature = base64url(crypto.HmacSHA256(header + '.' + payload, 'supersecretkilalakey'));",
+                  "  pm.environment.set('expiredToken', header + '.' + payload + '.' + signature);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expired token returns HTTP 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Expired token uses the standard JWT error', function () { pm.expect(pm.response.json().error).to.eql('Invalid or expired token'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "loginEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "loginPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cardholderToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lguToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expiredToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verifyPrivilegeType",
+      "value": "PWD",
+      "type": "string"
+    },
+    {
+      "key": "verifyCardIdNumber",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verifyFirstName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verifyMiddleName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verifyLastName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verifyDateOfBirth",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "claimLguIdNumber",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "claimDateOfBirth",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "claimEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "claimPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lguId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessSignupEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessSignupPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessBranchName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessCategory",
+      "value": "OTHER",
+      "type": "string"
+    },
+    {
+      "key": "businessPermitNo",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tinNumber",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessAddress",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
