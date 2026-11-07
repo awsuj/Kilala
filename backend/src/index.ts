@@ -668,16 +668,28 @@ app.post(
   }
 );
 
-// 4.5 Get Business Transaction History
-app.get(
-  '/api/transactions/business',
-  authenticateToken,
-  requireRole(['BUSINESS']),
-  async (req: AuthRequest, res: Response) => {
-    const businessId = req.user!.id;
+// 4.5 Get Business Transaction History & Dashboard Analytics Summary
+const handleBusinessTransactions = async (
+  req: AuthRequest,
+  res: Response,
+  forceSummary = false
+) => {
+  const businessId = req.user!.id;
+  const rawRange =
+    typeof req.query.range === 'string' ? req.query.range.trim().toLowerCase() : undefined;
 
-    try {
-      const result = await pool.query(
+  let intervalFilter = '';
+  if (rawRange === '24h') {
+    intervalFilter = "AND t.created_at >= NOW() - INTERVAL '24 hours'";
+  } else if (rawRange === 'week') {
+    intervalFilter = "AND t.created_at >= NOW() - INTERVAL '7 days'";
+  } else if (rawRange === 'month') {
+    intervalFilter = "AND t.created_at >= NOW() - INTERVAL '1 month'";
+  }
+
+  try {
+    const [listResult, summaryResult] = await Promise.all([
+      pool.query(
         `SELECT t.id,
                 t.business_id,
                 t.cardholder_id,
@@ -692,33 +704,70 @@ app.get(
          FROM transactions t
          JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
          WHERE t.business_id = $1
+           ${intervalFilter}
          ORDER BY t.created_at DESC`,
         [businessId]
-      );
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(t.discounted_amount), 0) AS total_discounted_amount,
+                COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounted_sales,
+                COALESCE(SUM(t.original_amount), 0) AS total_original_amount,
+                COUNT(t.id) AS transaction_count
+         FROM transactions t
+         WHERE t.business_id = $1
+           ${intervalFilter}`,
+        [businessId]
+      )
+    ]);
 
-      const transactions = result.rows.map((row) => ({
-        id: row.id,
-        business_id: row.business_id,
-        cardholder_id: row.cardholder_id,
-        cardholder_name: [row.first_name, row.middle_name, row.last_name]
-          .filter(Boolean)
-          .join(' '),
-        first_name: row.first_name,
-        middle_name: row.middle_name,
-        last_name: row.last_name,
-        lgu_id_number: row.lgu_id_number,
-        privilege_type: row.privilege_type,
-        original_amount: Number(row.original_amount),
-        discounted_amount: Number(row.discounted_amount),
-        created_at: row.created_at
-      }));
+    const transactions = listResult.rows.map((row) => ({
+      id: row.id,
+      business_id: row.business_id,
+      cardholder_id: row.cardholder_id,
+      cardholder_name: [row.first_name, row.middle_name, row.last_name]
+        .filter(Boolean)
+        .join(' '),
+      first_name: row.first_name,
+      middle_name: row.middle_name,
+      last_name: row.last_name,
+      lgu_id_number: row.lgu_id_number,
+      privilege_type: row.privilege_type,
+      original_amount: Number(row.original_amount),
+      discounted_amount: Number(row.discounted_amount),
+      created_at: row.created_at
+    }));
 
-      res.status(200).json(transactions);
-    } catch (error) {
-      console.error('Error fetching business transactions:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    if (rawRange || forceSummary) {
+      const summaryRow = summaryResult.rows[0] || {};
+      return res.status(200).json({
+        range: rawRange || 'all',
+        total_discounted_amount: Number(summaryRow.total_discounted_amount || 0),
+        total_discounted_sales: Number(summaryRow.total_discounted_sales || 0),
+        total_original_amount: Number(summaryRow.total_original_amount || 0),
+        transaction_count: Number(summaryRow.transaction_count || 0),
+        transactions
+      });
     }
+
+    return res.status(200).json(transactions);
+  } catch (error) {
+    console.error('Error fetching business transactions:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
+};
+
+app.get(
+  '/api/transactions/business',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  (req: AuthRequest, res: Response) => handleBusinessTransactions(req, res, false)
+);
+
+app.get(
+  '/api/transactions/business/summary',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  (req: AuthRequest, res: Response) => handleBusinessTransactions(req, res, true)
 );
 
 

@@ -19,7 +19,7 @@ struct ContentView: View {
                     self.session = nil
                 }
             case .business:
-                QRScannerView(token: session.token) {
+                BusinessDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
                     self.session = nil
                 }

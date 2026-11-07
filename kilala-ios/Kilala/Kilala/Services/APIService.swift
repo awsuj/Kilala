@@ -304,7 +304,40 @@ class APIService {
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode([TransactionHistoryItem].self, from: data)
+        if let items = try? decoder.decode([TransactionHistoryItem].self, from: data) {
+            return items
+        }
+        let summary = try decoder.decode(BusinessDashboardSummary.self, from: data)
+        return summary.transactions ?? []
+    }
+
+    func fetchBusinessDashboardSummary(range: String = "24h") async throws -> BusinessDashboardSummary {
+        var components = URLComponents(string: "\(baseURL)/transactions/business")
+        components?.queryItems = [URLQueryItem(name: "range", value: range)]
+        guard let url = components?.url else {
+            throw URLError(.badURL)
+        }
+        guard let token = authToken else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to fetch business dashboard metrics."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(BusinessDashboardSummary.self, from: data)
     }
 
 }

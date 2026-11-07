@@ -43,3 +43,31 @@ struct TransactionHistoryItem: Codable, Identifiable {
     let discountedAmount: Double
     let createdAt: String
 }
+
+enum DashboardTimeframe: String, CaseIterable, Identifiable {
+    case past24Hours = "24h"
+    case pastWeek = "week"
+    case pastMonth = "month"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .past24Hours:
+            return "Past 24 Hours"
+        case .pastWeek:
+            return "Past Week"
+        case .pastMonth:
+            return "Past Month"
+        }
+    }
+}
+
+struct BusinessDashboardSummary: Codable {
+    let range: String?
+    let totalDiscountedAmount: Double
+    let totalDiscountedSales: Double
+    let totalOriginalAmount: Double?
+    let transactionCount: Int?
+    let transactions: [TransactionHistoryItem]?
+}
