@@ -38,6 +38,7 @@ class APIService {
     // IMPORTANT: If running on a physical iPhone, change "localhost" to your Mac's IPv4 address (e.g., "192.168.1.15")
     private let baseURL =  "http://localhost:5001/api" //http://address:5001/api"
     var authToken: String?
+    var currentBusinessProfile: BusinessProfile?
     
     private init() {} // Prevent multiple instances
     
@@ -67,6 +68,11 @@ class APIService {
         // Decode the successful JSON response
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         self.authToken = loginResponse.token
+        if loginResponse.user.role == .business {
+            self.currentBusinessProfile = try? await self.fetchBusinessProfile()
+        } else {
+            self.currentBusinessProfile = nil
+        }
         return loginResponse
     }
     
@@ -186,6 +192,7 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let registrationResponse = try decoder.decode(BusinessRegistrationResponse.self, from: data)
         self.authToken = registrationResponse.token
+        self.currentBusinessProfile = registrationResponse.businessProfile
         return registrationResponse
     }
 
@@ -338,6 +345,72 @@ class APIService {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(BusinessDashboardSummary.self, from: data)
+    }
+
+    func fetchBusinessProfile() async throws -> BusinessProfile {
+        guard let url = URL(string: "\(baseURL)/business/me") else {
+            throw URLError(.badURL)
+        }
+        guard let token = authToken else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to fetch business profile."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let profile = try decoder.decode(BusinessProfile.self, from: data)
+        self.currentBusinessProfile = profile
+        return profile
+    }
+
+    func updateBusinessProfile(branchName: String, category: String, address: String) async throws -> BusinessProfile {
+        guard let url = URL(string: "\(baseURL)/business/profile") else {
+            throw URLError(.badURL)
+        }
+        guard let token = authToken else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let body: [String: String] = [
+            "branch_name": branchName.trimmingCharacters(in: .whitespacesAndNewlines),
+            "category": category.trimmingCharacters(in: .whitespacesAndNewlines),
+            "address": address.trimmingCharacters(in: .whitespacesAndNewlines)
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to update business profile. Please try again."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let updatedProfile = try decoder.decode(BusinessProfile.self, from: data)
+        self.currentBusinessProfile = updatedProfile
+        return updatedProfile
     }
 
 }

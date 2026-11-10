@@ -12,6 +12,7 @@ struct BusinessDashboardView: View {
     var onLogout: (() -> Void)? = nil
     
     // MARK: - Dashboard Analytics State
+    @State private var businessProfile: BusinessProfile? = APIService.shared.currentBusinessProfile
     @State private var selectedTimeframe: DashboardTimeframe = .past24Hours
     @State private var totalDiscountedAmount: Double = 0.0
     @State private var totalDiscountedSales: Double = 0.0
@@ -298,8 +299,15 @@ struct BusinessDashboardView: View {
                         Label("History", systemImage: "clock.arrow.circlepath")
                     }
                 }
-                if let onLogout = onLogout {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    NavigationLink(
+                        destination: BusinessProfileView(profile: businessProfile) { updated in
+                            businessProfile = updated
+                        }
+                    ) {
+                        Label("Profile", systemImage: "gearshape.fill")
+                    }
+                    if let onLogout = onLogout {
                         Button("Logout", action: onLogout)
                     }
                 }
@@ -307,6 +315,11 @@ struct BusinessDashboardView: View {
             .onAppear {
                 if !token.isEmpty {
                     APIService.shared.authToken = token
+                }
+            }
+            .task {
+                if let fetchedProfile = try? await APIService.shared.fetchBusinessProfile() {
+                    businessProfile = fetchedProfile
                 }
             }
             .task(id: selectedTimeframe) {

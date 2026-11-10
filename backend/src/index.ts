@@ -20,6 +20,7 @@ interface JwtPayload {
   id: string;
   email: string;
   role: 'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS';
+  business_id?: string;
 }
 
 interface AuthRequest extends Request {
@@ -303,7 +304,7 @@ app.post('/api/auth/register-business', async (req: Request, res: Response) => {
          user_id, lgu_id, business_name, branch_name, category,
          business_permit_no, tin_number, address
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
+       RETURNING *, (SELECT municipality_name FROM lgus WHERE id = $2) AS lgu_name`,
       [
         newUser.id,
         lgu_id,
@@ -446,19 +447,135 @@ app.get(
 // ============================================================================
 
 // 4.1 Get Logged-in Business Profile
+const handleGetBusinessProfile = async (req: AuthRequest, res: Response) => {
+  const businessId = req.user?.business_id || req.user!.id;
+  try {
+    const result = await pool.query(
+      `SELECT bp.*, l.municipality_name AS lgu_name
+       FROM business_profiles bp
+       JOIN lgus l ON l.id = bp.lgu_id
+       WHERE bp.user_id = $1 OR bp.id = $1`,
+      [businessId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business profile not found' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching business profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 app.get(
   '/api/business/me',
   authenticateToken,
   requireRole(['BUSINESS']),
+  handleGetBusinessProfile
+);
+
+app.get(
+  '/api/business/profile',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  handleGetBusinessProfile
+);
+
+// 4.1.1 Update Logged-in Business Profile (Editable Fields Only)
+app.put(
+  '/api/business/profile',
+  authenticateToken,
+  requireRole(['BUSINESS']),
   async (req: AuthRequest, res: Response) => {
+    // Extract business identifier securely from the merchant's verified JWT
+    const businessId = req.user?.business_id || req.user!.id;
+
+    // Strictly whitelist editable fields; silently ignore business_name, permit_number,
+    // business_permit_no, tin, tin_number, lgu_id, issuing_lgu, or any other legal identifiers.
+    const rawBranchName =
+      req.body.branch_name !== undefined ? req.body.branch_name : req.body.branchName;
+    const rawCategory = req.body.category;
+    const rawAddress = req.body.address;
+
+    const branchNameValue =
+      rawBranchName === undefined
+        ? undefined
+        : typeof rawBranchName === 'string'
+        ? rawBranchName.trim() || null
+        : null;
+    const categoryValue =
+      typeof rawCategory === 'string' && rawCategory.trim() !== ''
+        ? rawCategory.trim().toUpperCase()
+        : undefined;
+    const addressValue =
+      typeof rawAddress === 'string' && rawAddress.trim() !== ''
+        ? rawAddress.trim()
+        : undefined;
+
+    if (rawCategory !== undefined && !categoryValue) {
+      return res.status(400).json({ error: 'Category cannot be empty' });
+    }
+
+    if (rawAddress !== undefined && !addressValue) {
+      return res.status(400).json({ error: 'Address cannot be empty' });
+    }
+
+    const updateSql = `
+      UPDATE business_profiles bp
+      SET branch_name = CASE WHEN $1::boolean THEN $2 ELSE bp.branch_name END,
+          category = COALESCE($3::business_category, bp.category),
+          address = COALESCE($4, bp.address),
+          updated_at = CURRENT_TIMESTAMP
+      FROM lgus l
+      WHERE (bp.user_id = $5 OR bp.id = $5)
+        AND l.id = bp.lgu_id
+      RETURNING bp.*, l.municipality_name AS lgu_name
+    `;
+
     try {
-      const result = await pool.query(
-        `SELECT bp.*, l.municipality_name AS lgu_name
-         FROM business_profiles bp
-         JOIN lgus l ON l.id = bp.lgu_id
-         WHERE bp.user_id = $1`,
-        [req.user!.id]
-      );
+      let result;
+      try {
+        result = await pool.query(updateSql, [
+          branchNameValue !== undefined,
+          branchNameValue ?? null,
+          categoryValue ?? null,
+          addressValue ?? null,
+          businessId
+        ]);
+      } catch (err: any) {
+        // If the user entered a custom category string not yet in the business_category enum
+        if (err.code === '22P02' && categoryValue) {
+          const safeEnumVal = categoryValue.replace(/[^A-Z0-9_ ]/g, '').trim();
+          if (safeEnumVal) {
+            try {
+              await pool.query(
+                `ALTER TYPE business_category ADD VALUE IF NOT EXISTS '${safeEnumVal}'`
+              );
+              result = await pool.query(updateSql, [
+                branchNameValue !== undefined,
+                branchNameValue ?? null,
+                safeEnumVal,
+                addressValue ?? null,
+                businessId
+              ]);
+            } catch {
+              result = await pool.query(updateSql, [
+                branchNameValue !== undefined,
+                branchNameValue ?? null,
+                'OTHER',
+                addressValue ?? null,
+                businessId
+              ]);
+            }
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Business profile not found' });
@@ -466,7 +583,7 @@ app.get(
 
       res.status(200).json(result.rows[0]);
     } catch (error) {
-      console.error('Error fetching business profile:', error);
+      console.error('Error updating business profile:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

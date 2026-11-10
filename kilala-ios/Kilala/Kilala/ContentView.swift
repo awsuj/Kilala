@@ -21,6 +21,7 @@ struct ContentView: View {
             case .business:
                 BusinessDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
+                    APIService.shared.currentBusinessProfile = nil
                     self.session = nil
                 }
             case .lguAdmin:
