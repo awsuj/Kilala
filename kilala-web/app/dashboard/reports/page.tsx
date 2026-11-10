@@ -15,18 +15,18 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { apiFetch, ApiError } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
-// Mock data.
-//  - Discount/sales figures → need a new backend endpoint that aggregates the
-//    `transactions` table by lgu_id (e.g. GET /api/lgu/discounts). Not built yet.
-//  - Audit log → GET /api/lgu/logs (5.7), which already exists.
+// Discount/sales figures still need a backend endpoint that aggregates the
+// `transactions` table by lgu_id (e.g. GET /api/lgu/discounts) — not built yet,
+// so these cards remain sample data. The audit log below is live.
 // ---------------------------------------------------------------------------
 const summary = [
-  { label: "Total Discounts Provided", value: "₱1,284,560", hint: "All-time, LGU-wide" },
-  { label: "Total Sales Recorded", value: "₱6,420,800", hint: "Original bill amounts" },
-  { label: "Discounts YTD (2026)", value: "₱980,230", hint: "Jan 1 – today" },
-  { label: "Discounted Transactions", value: "12,840", hint: "Bills recorded" },
+  { label: "Total Discounts Provided", value: "₱1,284,560", hint: "Sample — endpoint pending" },
+  { label: "Total Sales Recorded", value: "₱6,420,800", hint: "Sample — endpoint pending" },
+  { label: "Discounts YTD (2026)", value: "₱980,230", hint: "Sample — endpoint pending" },
+  { label: "Discounted Transactions", value: "12,840", hint: "Sample — endpoint pending" },
 ];
 
 const byBusiness = [
@@ -37,15 +37,48 @@ const byBusiness = [
   { name: "Aling Nena Sari-Sari", branch: "Pembo", txns: "870", sales: "₱210,900", discounts: "₱42,180" },
 ];
 
-const logs = [
-  { when: "Today, 2:41 PM", name: "Juan Dela Cruz", lguId: "MKT-PWD-2026-00481", type: "PWD", business: "Mercury Drug", valid: true, reason: "—" },
-  { when: "Today, 1:15 PM", name: "Maria Bautista", lguId: "MKT-OSCA-2026-08912", type: "Senior", business: "SM Supermarket", valid: true, reason: "—" },
-  { when: "Today, 11:02 AM", name: "Pedro Santos", lguId: "MKT-PWD-2025-03120", type: "PWD", business: "Botika ng Barangay", valid: false, reason: "Card Expired" },
-  { when: "Yesterday, 4:30 PM", name: "Ana Reyes", lguId: "MKT-OSCA-2024-00455", type: "Senior", business: "Tinuhog Ni Benny", valid: false, reason: "Revoked by LGU" },
-  { when: "Yesterday, 10:12 AM", name: "Jose Cruz", lguId: "MKT-PWD-2026-00990", type: "PWD", business: "Mercury Drug", valid: true, reason: "—" },
-];
+// Live audit log — GET /api/lgu/logs
+interface LogRow {
+  id: string;
+  status_at_scan: string;
+  is_valid: boolean;
+  failure_reason: string | null;
+  scanned_at: string;
+  first_name: string;
+  last_name: string;
+  lgu_id_number: string;
+  privilege_type: "PWD" | "SENIOR_CITIZEN";
+  business_name: string;
+  branch_name: string | null;
+}
 
-export default function ReportsPage() {
+const typeLabel = (t: LogRow["privilege_type"]) =>
+  t === "SENIOR_CITIZEN" ? "Senior" : "PWD";
+
+/** "Today, 2:41 PM" / "Yesterday, 4:30 PM" / "Nov 3, 10:12 AM". */
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (sameDay(d, today)) return `Today, ${time}`;
+  if (sameDay(d, yesterday)) return `Yesterday, ${time}`;
+  const day = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${day}, ${time}`;
+}
+
+export default async function ReportsPage() {
+  let logs: LogRow[] = [];
+  let logsError: string | null = null;
+  try {
+    logs = await apiFetch<LogRow[]>("/api/lgu/logs");
+  } catch (e) {
+    logsError = e instanceof ApiError ? e.message : "Could not reach the server.";
+  }
+
   return (
     <div className="space-y-6">
       {/* Discounts & sales summary */}
@@ -69,7 +102,7 @@ export default function ReportsPage() {
             Total discounts each merchant gave on PWD &amp; Senior sales
           </CardDescription>
           <CardAction>
-            <Badge variant="outline">This year</Badge>
+            <Badge variant="outline">Sample data</Badge>
           </CardAction>
         </CardHeader>
         <CardContent>
@@ -98,7 +131,7 @@ export default function ReportsPage() {
         </CardContent>
       </Card>
 
-      {/* Verification audit log */}
+      {/* Verification audit log — live */}
       <Card>
         <CardHeader>
           <CardTitle>Verification audit log</CardTitle>
@@ -108,43 +141,64 @@ export default function ReportsPage() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>Cardholder</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Business</TableHead>
-                <TableHead>Result</TableHead>
-                <TableHead>Reason</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {logs.map((l, i) => (
-                <TableRow key={i}>
-                  <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">{l.when}</TableCell>
-                  <TableCell>
-                    <p className="font-bold text-foreground">{l.name}</p>
-                    <p className="font-mono text-xs text-muted-foreground">{l.lguId}</p>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="font-medium text-muted-foreground">{l.type}</Badge>
-                  </TableCell>
-                  <TableCell className="text-foreground">{l.business}</TableCell>
-                  <TableCell>
-                    {l.valid ? (
-                      <Badge variant="secondary">Valid</Badge>
-                    ) : (
-                      <Badge variant="outline" className="border-destructive/30 text-destructive">
-                        Invalid
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{l.reason}</TableCell>
+          {logsError ? (
+            <p className="py-8 text-center text-sm text-destructive">
+              Couldn&apos;t load audit log: {logsError}
+            </p>
+          ) : logs.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No verification scans recorded yet.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Cardholder</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Business</TableHead>
+                  <TableHead>Result</TableHead>
+                  <TableHead>Reason</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {logs.map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                      {formatWhen(l.scanned_at)}
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-bold text-foreground">
+                        {l.last_name}, {l.first_name}
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">{l.lgu_id_number}</p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-medium text-muted-foreground">
+                        {typeLabel(l.privilege_type)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-foreground">
+                      {l.business_name}
+                      {l.branch_name ? ` · ${l.branch_name}` : ""}
+                    </TableCell>
+                    <TableCell>
+                      {l.is_valid ? (
+                        <Badge variant="secondary">Valid</Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-destructive/30 text-destructive">
+                          Invalid
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {l.failure_reason || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
