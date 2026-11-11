@@ -1,4 +1,5 @@
-import DashboardOverview from "./dashboard-overview";
+import DashboardOverview, { type DashboardStats } from "./dashboard-overview";
+import { apiFetch, ApiError } from "@/lib/api";
 import {
   Card,
   CardHeader,
@@ -17,6 +18,40 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+
+// Live aggregate stats from GET /api/lgu/dashboard. (pg COUNT() comes back as
+// strings, so each field is coerced with Number.)
+interface DashboardResponse {
+  cardholderStats: {
+    total_cardholders: string | number;
+    active_pwd: string | number;
+    active_senior: string | number;
+    inactive_cards: string | number;
+  };
+  totalAccreditedBusinesses: number;
+  scanStats: {
+    total_scans: string | number;
+    valid_scans: string | number;
+    invalid_scans: string | number;
+    scans_today: string | number;
+  };
+}
+
+async function loadStats(): Promise<DashboardStats | { error: string }> {
+  try {
+    const d = await apiFetch<DashboardResponse>("/api/lgu/dashboard");
+    return {
+      registeredCardholders: Number(d.cardholderStats.total_cardholders),
+      accreditedBusinesses: Number(d.totalAccreditedBusinesses),
+      totalScans: Number(d.scanStats.total_scans),
+      validScans: Number(d.scanStats.valid_scans),
+      invalidScans: Number(d.scanStats.invalid_scans),
+      scansToday: Number(d.scanStats.scans_today),
+    };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.message : "Could not reach the server." };
+  }
+}
 
 const barangays = [
   { name: "Poblacion", district: "District 1", registered: "2,540", active: "92%", type: "PWD", total: "2,336", trend: [4, 6, 5, 7, 8, 7, 9], up: true },
@@ -46,19 +81,33 @@ function Sparkline({ data, up }: { data: number[]; up: boolean }) {
   );
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const stats = await loadStats();
+
   return (
     <div className="space-y-6">
-      {/* Interactive stat cards + chart + highlight panel */}
-      <DashboardOverview />
+      {"error" in stats ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Dashboard</CardTitle>
+            <CardDescription className="text-destructive">
+              Couldn&apos;t load stats: {stats.error}
+            </CardDescription>
+          </CardHeader>
+          <CardContent />
+        </Card>
+      ) : (
+        /* Live stat cards + chart + highlight panel */
+        <DashboardOverview stats={stats} />
+      )}
 
-      {/* Data table + summary */}
+      {/* Data table + summary (sample — no backend endpoint yet) */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Cardholders by Barangay</CardTitle>
             <CardAction>
-              <Badge variant="outline">All barangays</Badge>
+              <Badge variant="outline">Sample data</Badge>
             </CardAction>
           </CardHeader>
           <CardContent>
@@ -102,7 +151,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>This month</CardTitle>
-            <CardDescription>Verification activity</CardDescription>
+            <CardDescription>Verification activity · sample</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
