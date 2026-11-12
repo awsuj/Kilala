@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Ban, Check, Clock, Copy, Pencil } from "lucide-react";
+import { Ban, Check, Clock, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -26,7 +26,6 @@ type Props = {
   record: CardRecord | null;
   status: Status | null;
   onClose: () => void;
-  onEdit: (id: string) => void;
   onRenew: (id: string) => void;
   onSuspend: (id: string) => void;
   onReinstate: (id: string) => void;
@@ -180,7 +179,6 @@ export default function DetailsSheet({
   record,
   status,
   onClose,
-  onEdit,
   onRenew,
   onSuspend,
   onReinstate,
@@ -198,7 +196,6 @@ export default function DetailsSheet({
             key={record.id}
             record={record}
             status={status}
-            onEdit={onEdit}
             onRenew={onRenew}
             onSuspend={onSuspend}
             onReinstate={onReinstate}
@@ -212,14 +209,12 @@ export default function DetailsSheet({
 function DetailsBody({
   record,
   status,
-  onEdit,
   onRenew,
   onSuspend,
   onReinstate,
 }: {
   record: CardRecord;
   status: Status;
-  onEdit: Props["onEdit"];
   onRenew: Props["onRenew"];
   onSuspend: Props["onSuspend"];
   onReinstate: Props["onReinstate"];
@@ -346,14 +341,6 @@ function DetailsBody({
       </div>
 
       <SheetFooter className="flex-row gap-2 border-t border-hairline p-4">
-        <Button
-          type="button"
-          variant="outline"
-          className="flex-1"
-          onClick={() => onEdit(record.id)}
-        >
-          <Pencil className="size-4" /> Edit details
-        </Button>
         {status === "Expired" && (
           <Button
             type="button"

@@ -26,7 +26,8 @@ export type HistoryEvent = {
 };
 
 export type CardRecord = {
-  id: string; // card number
+  dbId: string; // backend cardholder_profiles UUID (used for API calls)
+  id: string; // card number (lgu_id_number) — shown to the admin
   firstName: string;
   middleName: string;
   lastName: string;
@@ -51,6 +52,8 @@ export type NewRecordInput = {
   middleName: string;
   lastName: string;
   birthdate: string;
+  sex: string;
+  address: string;
   cardNumber: string;
   issuingLgu: string;
   issuingDate: string;
