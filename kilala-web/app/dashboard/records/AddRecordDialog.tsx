@@ -29,7 +29,9 @@ import type {
 import {
   CARD_SYSTEM_LABELS,
   DISABILITY_TYPES,
+  MIN_SENIOR_AGE,
   NATURE_LABELS,
+  ageOn,
   computeExpiry,
   todayLocal,
 } from "./rules";
@@ -64,7 +66,7 @@ const emptyForm: FormState = {
   cardSystemType: "",
 };
 
-function Field({
+export function Field({
   id,
   label,
   error,
@@ -149,6 +151,16 @@ export default function AddRecordDialog({ existingIds, onAdd }: Props) {
       e.issuingDate = "Issuing date can't be in the future.";
     else if (form.birthday && form.issuingDate < form.birthday)
       e.issuingDate = "Issuing date can't be before the birthday.";
+
+    if (
+      form.privilegeType === "Senior" &&
+      form.birthday &&
+      form.issuingDate &&
+      !e.birthday &&
+      !e.issuingDate &&
+      ageOn(form.birthday, form.issuingDate) < MIN_SENIOR_AGE
+    )
+      e.birthday = `Senior citizens must be at least ${MIN_SENIOR_AGE} on the issuing date.`;
 
     if (!form.privilegeType) e.privilegeType = "Pick a privilege type.";
 
