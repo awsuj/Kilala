@@ -63,13 +63,11 @@ struct SchemaContractTests {
         #expect(appTypes == schemaTypes)
     }
 
-    @Test("SCH-03 business_category enum matches the sign-up category list (test copy)")
+    @Test("SCH-03 business_category enum matches the sign-up category list")
     func businessCategoriesMatchSchema() throws {
-        // Mirrors the private `categories` list in BusinessSignupView.swift. The view's
-        // list is private, so this test cannot read it: it guards the schema side only.
-        // If the view's list changes, update this copy too.
-        let appCategories: Set<String> = ["PHARMACY", "RESTAURANT", "GROCERY", "TRANSPORT",
-                                          "MEDICAL", "ENTERTAINMENT", "OTHER"]
+        // Reads the list the business sign-up screen actually shows (F-05).
+        let appCategories = Set(BusinessSignupView.categories)
+        #expect(appCategories.count == BusinessSignupView.categories.count, "Duplicate category in the app list")
         #expect(try SchemaFile.enumValues("business_category") == appCategories)
     }
 

@@ -65,16 +65,21 @@ extension NetworkTests {
             #expect(api.authToken == Fixtures.jwt)
         }
 
-        @Test("AUTH-03 login throws and stores no token on a non-2xx response",
-              arguments: [400, 401, 403, 500])
-        func loginFailureThrows(status: Int) async {
-            MockURLProtocol.respond(status: status, json: Fixtures.loginInvalid)
+        @Test("AUTH-03 login maps each failure to its own error and stores no token (F-03)",
+              arguments: [
+                (400, Fixtures.loginMissingFields, APIErrorKind.badRequest, "Email and password are required"),
+                (401, Fixtures.loginInvalid, APIErrorKind.unauthorized, "Invalid email or password"),
+                (403, Fixtures.loginDeactivated, APIErrorKind.unauthorized, "Account is deactivated"),
+                (500, Fixtures.internalServerError, APIErrorKind.serverError,
+                 "The Kilala server had a problem. Please try again later.")
+              ])
+        func loginFailureMapsToMessage(status: Int, body: String, kind: APIErrorKind, message: String) async {
+            MockURLProtocol.respond(status: status, json: body)
             defer { MockURLProtocol.uninstall() }
 
-            let error = await #expect(throws: URLError.self) {
+            await expectAPIError(kind, message: message) {
                 _ = try await api.login(email: "missing@example.test", password: "wrong")
             }
-            #expect(error?.code == .badServerResponse)
             assertAnsweredByStub()
             #expect(api.authToken == nil)
         }
@@ -240,6 +245,72 @@ extension NetworkTests {
             }
             assertAnsweredByStub()
         }
+
+        // MARK: Cardholder signup – POST /api/auth/claim-cardholder (F-01)
+
+        @Test("SIGN-09 claim-cardholder sends the four agreed snake_case fields")
+        func claimCardholderRequestShape() async throws {
+            MockURLProtocol.respond(status: 201, json: Fixtures.loginSuccess(role: "CARDHOLDER"))
+            defer { MockURLProtocol.uninstall() }
+
+            _ = try await api.claimCardholder(lguIdNumber: "MKT-PWD-2026-TEST-001", dateOfBirth: "1999-03-17",
+                                              email: "qa.ios.claim@example.test", password: "QaPassword123!")
+
+            let request = try #require(MockURLProtocol.lastRequest)
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path() == "/api/auth/claim-cardholder")
+            #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+            #expect(request.jsonBody["lgu_id_number"] as? String == "MKT-PWD-2026-TEST-001")
+            #expect(request.jsonBody["date_of_birth"] as? String == "1999-03-17")
+            #expect(request.jsonBody["email"] as? String == "qa.ios.claim@example.test")
+            #expect(request.jsonBody["password"] as? String == "QaPassword123!")
+            #expect(request.jsonBody.count == 4)
+        }
+
+        @Test("SIGN-10 claim-cardholder success returns a cardholder session and stores the JWT")
+        func claimCardholderSignsIn() async throws {
+            MockURLProtocol.respond(status: 201, json: Fixtures.loginSuccess(role: "CARDHOLDER"))
+            defer { MockURLProtocol.uninstall() }
+
+            let session = try await api.claimCardholder(lguIdNumber: "MKT-PWD-2026-TEST-001", dateOfBirth: "1999-03-17",
+                                                        email: "qa.ios.claim@example.test", password: "QaPassword123!")
+
+            #expect(session.user.role == .cardholder)
+            #expect(session.token == Fixtures.jwt)
+            #expect(api.authToken == Fixtures.jwt)
+        }
+
+        @Test("SIGN-11 claim-cardholder maps 409 to conflict (ID already claimed or email in use)",
+              arguments: [Fixtures.claimAlreadyClaimed, Fixtures.claimEmailInUse])
+        func claimCardholderConflict(body: String) async throws {
+            MockURLProtocol.respond(status: 409, json: body)
+            defer { MockURLProtocol.uninstall() }
+            let expected = try #require(Fixtures.errorMessage(in: body))
+
+            await expectAPIError(.conflict, message: expected) {
+                _ = try await api.claimCardholder(lguIdNumber: "MKT-PWD-2026-00481", dateOfBirth: "1990-05-15",
+                                                  email: "qa.ios.claim@example.test", password: "QaPassword123!")
+            }
+            assertAnsweredByStub()
+            #expect(api.authToken == nil)
+        }
+
+        @Test("SIGN-12 claim-cardholder maps 400/404 to badRequest and 5xx to serverError",
+              arguments: [(400, Fixtures.claimMissingFields, APIErrorKind.badRequest),
+                          (404, Fixtures.claimNotFound, APIErrorKind.badRequest),
+                          (500, Fixtures.internalServerError, APIErrorKind.serverError)])
+        func claimCardholderErrors(status: Int, body: String, kind: APIErrorKind) async throws {
+            MockURLProtocol.respond(status: status, json: body)
+            defer { MockURLProtocol.uninstall() }
+            let expected = try #require(Fixtures.errorMessage(in: body))
+
+            await expectAPIError(kind, message: expected) {
+                _ = try await api.claimCardholder(lguIdNumber: "MKT-PWD-0000-NONE", dateOfBirth: "2000-01-01",
+                                                  email: "qa.ios.claim@example.test", password: "QaPassword123!")
+            }
+            assertAnsweredByStub()
+            #expect(api.authToken == nil)
+        }
     }
 }
 
@@ -253,7 +324,7 @@ func assertAnsweredByStub(sourceLocation: SourceLocation = #_sourceLocation) {
             "Request was not answered by MockURLProtocol", sourceLocation: sourceLocation)
 }
 
-enum APIErrorKind { case conflict, badRequest, serverError }
+enum APIErrorKind { case conflict, badRequest, unauthorized, serverError }
 
 /// Asserts that `body` throws the given APIError case carrying `message`.
 @MainActor
@@ -270,6 +341,7 @@ func expectAPIError(
         switch (kind, error) {
         case (.conflict, .conflict(let actual)),
              (.badRequest, .badRequest(let actual)),
+             (.unauthorized, .unauthorized(let actual)),
              (.serverError, .serverError(let actual)):
             #expect(actual == message, sourceLocation: sourceLocation)
         default:

@@ -49,6 +49,8 @@ enum Fixtures {
 
     /// POST /api/auth/login → 401
     static let loginInvalid = #"{"error":"Invalid email or password"}"#
+    static let loginMissingFields = #"{"error":"Email and password are required"}"#
+    static let loginDeactivated = #"{"error":"Account is deactivated"}"#
 
     /// GET /api/lgus → 200 (province is NULL for NCR cities)
     static let lguList = """
@@ -109,6 +111,18 @@ enum Fixtures {
     static let registerBusinessMissingFields = #"{"error":"Missing required business registration fields"}"#
     static let registerBusinessDuplicate = #"{"error":"Email or Business Permit No. already exists"}"#
     static let internalServerError = #"{"error":"Internal server error"}"#
+
+    // POST /api/auth/claim-cardholder (success returns the same shape as loginSuccess)
+    static let claimMissingFields = #"{"error":"All fields are required to claim your ID"}"#
+    static let claimNotFound = #"{"error":"No matching LGU record found"}"#
+    static let claimAlreadyClaimed = #"{"error":"This ID has already been claimed by an account"}"#
+    static let claimEmailInUse = #"{"error":"Email is already in use"}"#
+
+    /// The `error` text of a backend error body, for tests that expect it verbatim.
+    static func errorMessage(in json: String) -> String? {
+        let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        return object?["error"] as? String
+    }
 
     /// GET /api/cardholder/me → 200 (subset of columns the app decodes, plus extras it must ignore).
     static let cardholderProfile = """

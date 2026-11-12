@@ -33,7 +33,8 @@ struct BusinessSignupView: View {
     @State private var alertMessage = ""
     @State private var showErrorAlert = false
     
-    private let categories = [
+    /// Must match the business_category enum in backend/src/schema/schema.sql (checked by SCH-03).
+    static let categories = [
         "PHARMACY",
         "RESTAURANT",
         "GROCERY",
@@ -49,8 +50,16 @@ struct BusinessSignupView: View {
         !businessPermitNo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !tinNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !password.isEmpty
+        InputValidation.isValidEmail(email) &&
+        InputValidation.passwordProblem(password) == nil
+    }
+    
+    private var showEmailHint: Bool {
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !InputValidation.isValidEmail(email)
+    }
+    
+    private var showPasswordHint: Bool {
+        !password.isEmpty && InputValidation.passwordProblem(password) != nil
     }
     
     var body: some View {
@@ -79,30 +88,37 @@ struct BusinessSignupView: View {
                                 .tag(UUID?.some(lgu.id))
                         }
                     }
+                    .accessibilityIdentifier("business.lgu")
                 }
             }
             
             Section(header: Text("Business Information")) {
                 TextField("Business Name *", text: $businessName)
+                    .accessibilityIdentifier("business.name")
                 
                 TextField("Branch Name (Optional)", text: $branchName)
+                    .accessibilityIdentifier("business.branch")
                 
                 Picker("Category", selection: $selectedCategory) {
-                    ForEach(categories, id: \.self) { category in
+                    ForEach(Self.categories, id: \.self) { category in
                         Text(category.capitalized)
                             .tag(category)
                     }
                 }
+                .accessibilityIdentifier("business.category")
                 
                 TextField("Business Permit No. *", text: $businessPermitNo)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
+                    .accessibilityIdentifier("business.permit")
                 
                 TextField("TIN Number *", text: $tinNumber)
                     .keyboardType(.numbersAndPunctuation)
                     .autocorrectionDisabled()
+                    .accessibilityIdentifier("business.tin")
                 
                 TextField("Business Address *", text: $address)
+                    .accessibilityIdentifier("business.address")
             }
             
             Section(
@@ -113,8 +129,24 @@ struct BusinessSignupView: View {
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .accessibilityIdentifier("business.email")
+                
+                if showEmailHint {
+                    Text(InputValidation.invalidEmailMessage)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .accessibilityIdentifier("business.emailHint")
+                }
                 
                 SecureField("Password *", text: $password)
+                    .accessibilityIdentifier("business.password")
+                
+                if showPasswordHint {
+                    Text(InputValidation.shortPasswordMessage)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .accessibilityIdentifier("business.passwordHint")
+                }
             }
             
             Section {
@@ -134,6 +166,7 @@ struct BusinessSignupView: View {
                     }
                 }
                 .disabled(!isFormValid || isSubmitting)
+                .accessibilityIdentifier("business.submit")
             }
         }
         .navigationTitle("Register Business")
@@ -202,6 +235,9 @@ struct BusinessSignupView: View {
                     alertMessage = message
                 case .badRequest(let message):
                     alertTitle = "Invalid Input"
+                    alertMessage = message
+                case .unauthorized(let message):
+                    alertTitle = "Not Allowed"
                     alertMessage = message
                 case .serverError(let message):
                     alertTitle = "Registration Error"
