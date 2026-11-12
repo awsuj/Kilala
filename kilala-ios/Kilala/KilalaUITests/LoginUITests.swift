@@ -114,9 +114,7 @@ final class LoginUITests: XCTestCase {
                       "Cardholder should land on the digital ID screen")
         attachScreenshot(app, named: "UI-06 Cardholder home")
 
-        app.buttons[UIText.logout].tap()
-        XCTAssertTrue(app.buttons[UIText.login].waitForExistence(timeout: 5),
-                      "Logout should return to the login screen")
+        logOut(app)
     }
 
     @MainActor
@@ -143,9 +141,7 @@ final class LoginUITests: XCTestCase {
                       "Business should land on the merchant scanner")
         attachScreenshot(app, named: "UI-08 Business home")
 
-        app.buttons[UIText.logout].tap()
-        XCTAssertTrue(app.buttons[UIText.login].waitForExistence(timeout: 5),
-                      "Logout should return to the login screen")
+        logOut(app)
     }
 
     @MainActor
@@ -160,8 +156,6 @@ final class LoginUITests: XCTestCase {
                       "LGU admins should be told to use the web portal")
         attachScreenshot(app, named: "UI-09 LGU admin notice")
 
-        app.buttons[UIText.logout].tap()
-        XCTAssertTrue(app.buttons[UIText.login].waitForExistence(timeout: 5),
-                      "Logout should return to the login screen")
+        logOut(app)
     }
 }

@@ -67,9 +67,9 @@ extension NetworkTests {
             #expect(api.authToken == response.token)
         }
 
-        @Test("LIVE-02 Wrong password is rejected by APIService")
+        @Test("LIVE-02 Wrong password is rejected by APIService with the backend's message")
         func wrongPasswordRejected() async {
-            await #expect(throws: URLError.self) {
+            await expectAPIError(.unauthorized, message: "Invalid email or password") {
                 _ = try await api.login(email: TestAccounts.cardholderPWD, password: "not-the-password")
             }
             #expect(api.authToken == nil)

@@ -27,6 +27,7 @@ struct ContentView: View {
                 VStack(spacing: 16) {
                     Text("Please use the Kilala Web Portal for LGU Admin access.")
                         .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("lguAdmin.notice")
                     Button("Logout") {
                         APIService.shared.authToken = nil
                         self.session = nil

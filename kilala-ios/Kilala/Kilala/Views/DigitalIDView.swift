@@ -32,10 +32,12 @@ struct DigitalIDView: View {
                         Text(profile.fullName)
                             .font(.title2)
                             .fontWeight(.bold)
+                            .accessibilityIdentifier("digitalID.name")
                         
                         Text("\(profile.privilegeType) • \(profile.lguIdNumber)")
                             .font(.subheadline)
                             .foregroundColor(.blue)
+                            .accessibilityIdentifier("digitalID.cardLine")
                         
                         if let disability = profile.disabilityType {
                             Text(disability)
@@ -53,6 +55,8 @@ struct DigitalIDView: View {
                             .background(Color.white)
                             .cornerRadius(12)
                             .shadow(radius: 4)
+                            .accessibilityLabel("QR code")
+                            .accessibilityIdentifier("digitalID.qr")
                         
                         Text("Status: \(profile.status)")
                             .font(.caption)
@@ -62,6 +66,7 @@ struct DigitalIDView: View {
                             .background(profile.status == "ACTIVE" ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
                             .foregroundColor(profile.status == "ACTIVE" ? .green : .red)
                             .cornerRadius(8)
+                            .accessibilityIdentifier("digitalID.status")
                     }
                     .padding()
                     .background(Color(.secondarySystemBackground))
@@ -69,6 +74,7 @@ struct DigitalIDView: View {
                     .padding()
                 } else if let errorMessage = errorMessage {
                     Text(errorMessage).foregroundColor(.red)
+                        .accessibilityIdentifier("digitalID.error")
                 } else {
                     ProgressView("Loading Digital ID...")
                 }

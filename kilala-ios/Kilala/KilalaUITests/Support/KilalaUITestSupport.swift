@@ -34,7 +34,7 @@ enum UIText {
     static let login = "Login"
     static let createAccount = "Create new account"
     static let registerBusinessLink = "Register your Business"
-    static let loginError = "Invalid credentials or server offline."
+    static let loginError = "Invalid email or password"
 
     // ContentView / post-login screens
     static let cardholderHome = "My Kilala ID"
@@ -47,10 +47,74 @@ enum UIText {
     static let matchRecord = "Match your LGU record"
     static let verifyRecord = "Verify Record"
     static let cardholderValidation = "Please fill in your first name, last name, and physical card number."
+    static let dateOfBirthRequired = "Please select your date of birth."
+    static let noMatchingRecord = "No matching LGU record found. Please check your details."
+    static let middleNameHint = "If your ID shows a middle name, enter it as well."
+    static let passwordsDoNotMatch = "Passwords do not match."
 
     // BusinessSignupView
     static let businessSignupTitle = "Register Business"
     static let makatiOption = "Makati City (MKT)"
+    static let invalidEmailHint = "Enter a valid email address, like name@example.com."
+    static let shortPasswordHint = "Password must be at least 8 characters."
+}
+
+/// Accessibility identifiers set in the app's views (F-05). Prefer these over visible
+/// text when locating inputs; visible text is still used to check what the user sees.
+enum UIID {
+    // LoginView
+    static let loginEmail = "login.email"
+    static let loginPassword = "login.password"
+    static let loginSubmit = "login.submit"
+    static let loginError = "login.error"
+    static let createAccountLink = "login.createAccount"
+    static let registerBusinessLink = "login.registerBusiness"
+
+    // CardholderSignupView – step 1, match the LGU record
+    static let typePWD = "signup.type.pwd"
+    static let typeSenior = "signup.type.senior"
+    static let firstName = "signup.firstName"
+    static let middleName = "signup.middleName"
+    static let lastName = "signup.lastName"
+    static let cardNumber = "signup.cardNumber"
+    static let dateOfBirth = "signup.dateOfBirth"
+    static let verify = "signup.verify"
+    static let signupError = "signup.error"
+    static let verified = "signup.verified"
+
+    // CardholderSignupView – step 2, create the login (F-01)
+    static let signupEmail = "signup.email"
+    static let signupPassword = "signup.password"
+    static let signupConfirmPassword = "signup.confirmPassword"
+    static let signupCreateAccount = "signup.createAccount"
+    static let signupAccountError = "signup.accountError"
+
+    // BusinessSignupView
+    static let businessName = "business.name"
+    static let businessPermit = "business.permit"
+    static let businessTIN = "business.tin"
+    static let businessAddress = "business.address"
+    static let businessEmail = "business.email"
+    static let businessPassword = "business.password"
+    static let businessSubmit = "business.submit"
+    static let businessEmailHint = "business.emailHint"
+    static let businessPasswordHint = "business.passwordHint"
+
+    // DigitalIDView
+    static let digitalIDName = "digitalID.name"
+    static let digitalIDStatus = "digitalID.status"
+}
+
+/// The unclaimed LGU record used by the cardholder sign-up tests (backend/src/schema/seed.sql).
+enum UnclaimedRecordUI {
+    static let firstName = "Ana"
+    static let middleName = "Marie"
+    static let lastName = "Santos"
+    static let cardNumber = "MKT-PWD-2026-TEST-001"
+    static let birthMonth = "March"
+    static let birthYear = 1999
+    static let birthDay = 17
+    static let birthDateISO = "1999-03-17"
 }
 
 extension XCTestCase {
@@ -107,15 +171,106 @@ extension XCTestCase {
     /// Fills the login form and taps Login.
     @MainActor
     func logIn(_ app: XCUIApplication, email: String, password: String) {
-        let emailField = app.textFields[UIText.email]
+        let emailField = app.textFields[UIID.loginEmail]
         emailField.tap()
         emailField.typeText(email)
 
-        let passwordField = app.secureTextFields[UIText.password]
+        let passwordField = app.secureTextFields[UIID.loginPassword]
         passwordField.tap()
         passwordField.typeText(password)
 
-        app.buttons[UIText.login].tap()
+        app.buttons[UIID.loginSubmit].tap()
+    }
+
+    /// Types into a field. Any open keyboard is closed first: switching straight from one
+    /// field to another can drop keystrokes while the keyboard changes layout (for example
+    /// email → password), and an open keyboard can cover the next field.
+    @MainActor
+    func type(_ text: String, into element: XCUIElement, in app: XCUIApplication) {
+        dismissKeyboard(app)
+        if !element.isHittable { app.swipeUp() }
+        element.tap()
+        element.typeText(text)
+    }
+
+    /// Taps Logout and checks the login screen returns. iOS's "Save Password?" prompt can
+    /// appear a few seconds after login and swallow the tap, so it is dismissed and the tap
+    /// retried once.
+    @MainActor
+    func logOut(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let logout = app.buttons[UIText.logout]
+        for _ in 0..<3 {
+            dismissSavePasswordPromptIfShown(app, timeout: 1)
+            // A tap during the prompt's dismiss animation lands nowhere, so wait until
+            // the button can actually be tapped.
+            waitUntilHittable(logout, timeout: 3)
+            logout.tap()
+            if app.buttons[UIID.loginSubmit].waitForExistence(timeout: 5) { return }
+        }
+        XCTFail("Logout should return to the login screen", file: file, line: line)
+    }
+
+    /// Waits (up to `timeout`) until the element can receive a tap; returns whether it can.
+    @MainActor
+    @discardableResult
+    func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"),
+                                                    object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Picks a date in the cardholder sign-up date-of-birth picker. The compact picker
+    /// opens a calendar; "Show year picker" switches it to month and year wheels.
+    @MainActor
+    func setDateOfBirth(_ app: XCUIApplication, month: String, year: Int, day: Int,
+                        file: StaticString = #filePath, line: UInt = #line) {
+        let picker = app.datePickers[UIID.dateOfBirth]
+        if !picker.isHittable { app.swipeUp() }
+        picker.tap()
+
+        let yearToggle = app.buttons["DatePicker.Show"]
+        XCTAssertTrue(yearToggle.waitForExistence(timeout: 5), "Calendar did not open", file: file, line: line)
+        yearToggle.tap()
+
+        let monthWheel = app.pickerWheels.element(boundBy: 0)
+        XCTAssertTrue(monthWheel.waitForExistence(timeout: 5), "Month/year wheels did not appear", file: file, line: line)
+        monthWheel.adjust(toPickerWheelValue: month)
+        app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: String(year))
+        // While the wheels are shown, the same toggle is identified as "DatePicker.Hide".
+        app.buttons["DatePicker.Hide"].tap()
+
+        let dayButton = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "\(month) \(day)")).firstMatch
+        XCTAssertTrue(dayButton.waitForExistence(timeout: 5), "Day \(month) \(day) not shown", file: file, line: line)
+        dayButton.tap()
+
+        let dismiss = app.buttons["PopoverDismissRegion"]
+        if dismiss.waitForExistence(timeout: 2) { dismiss.tap() }
+    }
+
+    /// True when the unclaimed seed record can still be claimed. Sign-up tests that claim it
+    /// skip otherwise; reset it with the SQL in kilala-ios/TESTING.md §4.
+    static func isUnclaimedRecordAvailable() -> Bool {
+        var request = URLRequest(url: URL(string: "http://localhost:5001/api/auth/verify-record")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 3
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "privilege_type": "PWD",
+            "card_id_number": UnclaimedRecordUI.cardNumber,
+            "first_name": UnclaimedRecordUI.firstName,
+            "middle_name": UnclaimedRecordUI.middleName,
+            "last_name": UnclaimedRecordUI.lastName,
+            "date_of_birth": UnclaimedRecordUI.birthDateISO
+        ])
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var available = false
+        let task = healthSession.dataTask(with: request) { _, response, _ in
+            available = (response as? HTTPURLResponse)?.statusCode == 200
+            semaphore.signal()
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 5)
+        return available
     }
 
     /// Closes the software keyboard (if shown) so it cannot cover the next button,
@@ -132,10 +287,12 @@ extension XCTestCase {
 
     /// iOS may offer to save the password after a successful login; dismiss it.
     @MainActor
-    func dismissSavePasswordPromptIfShown(_ app: XCUIApplication) {
+    func dismissSavePasswordPromptIfShown(_ app: XCUIApplication, timeout: TimeInterval = 2) {
         let notNow = app.buttons["Not Now"]
-        if notNow.waitForExistence(timeout: 2) {
+        if notNow.waitForExistence(timeout: timeout) {
             notNow.tap()
+            // Let the prompt finish animating away before the next tap.
+            _ = notNow.waitForNonExistence(timeout: 3)
         }
     }
 

@@ -16,12 +16,14 @@ struct LoginResponse: Codable {
 enum APIError: LocalizedError {
     case conflict(String)
     case badRequest(String)
+    case unauthorized(String)
     case serverError(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .conflict(let message),
              .badRequest(let message),
+             .unauthorized(let message),
              .serverError(let message):
             return message
         }
@@ -58,12 +60,24 @@ class APIService {
         // Execute the network call
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        // Check for HTTP errors (e.g., 401 Unauthorized)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            // In a production app, you would decode the error message here
+        guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
-        
+
+        // Map HTTP errors to messages the login screen can show as-is.
+        // Network failures (server down, no internet) are thrown by URLSession as URLError.
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendMessage = (try? JSONDecoder().decode(BackendErrorBody.self, from: data))?.error
+            switch httpResponse.statusCode {
+            case 400:
+                throw APIError.badRequest(backendMessage ?? "Email and password are required.")
+            case 401, 403:
+                throw APIError.unauthorized(backendMessage ?? "Invalid email or password.")
+            default:
+                throw APIError.serverError("The Kilala server had a problem. Please try again later.")
+            }
+        }
+
         // Decode the successful JSON response
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         self.authToken = loginResponse.token
@@ -239,6 +253,53 @@ class APIService {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(SignupVerificationResponse.self, from: data)
+    }
+
+    /// Creates the cardholder's login for an LGU record that was matched with `verifyRecord`.
+    /// On success the backend returns the same shape as login, so the user is signed in right away.
+    func claimCardholder(
+        lguIdNumber: String,
+        dateOfBirth: String,
+        email: String,
+        password: String
+    ) async throws -> LoginResponse {
+        guard let url = URL(string: "\(baseURL)/auth/claim-cardholder") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = [
+            "lgu_id_number": lguIdNumber,
+            "date_of_birth": dateOfBirth,
+            "email": email,
+            "password": password
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendMessage = (try? JSONDecoder().decode(BackendErrorBody.self, from: data))?.error
+            switch httpResponse.statusCode {
+            case 400, 404:
+                throw APIError.badRequest(backendMessage ?? "Unable to match your LGU record. Please check your details.")
+            case 409:
+                throw APIError.conflict(backendMessage ?? "This ID or email is already linked to an account.")
+            default:
+                throw APIError.serverError(backendMessage ?? "Unable to create your account. Please try again.")
+            }
+        }
+
+        let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
+        self.authToken = loginResponse.token
+        return loginResponse
     }
 
     func recordTransaction(
