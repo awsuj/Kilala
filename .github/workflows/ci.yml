@@ -195,7 +195,12 @@ jobs:
           echo "Executing Web Portal Unit Tests..."
           if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
             cd kilala-web
-            npm test --if-present -- --watchAll=false
+            # If Playwright is configured, run only chromium to avoid resource contention across 3 projects
+            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
+              npx playwright test --project=chromium
+            else
+              npm test --if-present -- --watchAll=false
+            fi
           elif [ -f "kilala-web/app/components/public/package.json" ]; then
             cd kilala-web/app/components/public
             npm test --if-present -- --watchAll=false
@@ -206,10 +211,19 @@ jobs:
           echo "Executing Mobile Application Unit Tests..."
           if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
             cd kilala-mobile
-            npm test --if-present -- --watchAll=false
+            # Support Playwright for mobile web if configured (scoped to chromium)
+            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
+              npx playwright test --project=chromium
+            else
+              npm test --if-present -- --watchAll=false
+            fi
           elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
             cd mobile
-            npm test --if-present -- --watchAll=false
+            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
+              npx playwright test --project=chromium
+            else
+              npm test --if-present -- --watchAll=false
+            fi
           fi
 
   # PHASE 4: Application Build
@@ -360,4 +374,32 @@ jobs:
           if [ -d "backend" ] && [ -f "backend/package.json" ]; then
             cd backend
             npm run test:integration --if-present
+          fi
+
+      - name: Run Postman API Collections (Newman)
+        run: |
+          echo "Executing QA Postman Collections against live API..."
+          POSTMAN_DIRS="qa-tests tests/postman"
+          FOUND=0
+          for dir in $POSTMAN_DIRS; do
+            if [ -d "$dir" ]; then
+              for collection in "$dir"/*.postman_collection.json; do
+                [ -e "$collection" ] || continue
+                echo "Executing Postman collection: $collection"
+                ENV_FILE=""
+                # Look for matching environment file in the same directory
+                for env in "$dir"/*.postman_environment.json; do
+                  if [ -e "$env" ]; then
+                    ENV_FILE="-e $env"
+                    echo "Using environment: $env"
+                    break
+                  fi
+                done
+                npx --yes newman run "$collection" $ENV_FILE --global-var "baseUrl=http://localhost:5000" --reporters cli
+                FOUND=1
+              done
+            fi
+          done
+          if [ $FOUND -eq 0 ]; then
+            echo "No Postman collections found to execute."
           fi
