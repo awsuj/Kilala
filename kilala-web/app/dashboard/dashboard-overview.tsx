@@ -13,8 +13,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 // ---------------------------------------------------------------------------
-// Mock monthly series (wired to GET /api/lgu/dashboard later). Hovering a
-// month in the chart drives the stat cards + Total Verifications panel.
+// Sample monthly series for the trend chart's shape only — there's no backend
+// time-series endpoint yet. Headline stat cards + the Total Verifications panel
+// are driven by live stats (see props). Hovering highlights a month on the chart.
 // ---------------------------------------------------------------------------
 const monthly = [
   { m: "Jan", v: 820 },
@@ -47,13 +48,11 @@ const cmax = cum[cum.length - 1];
 const grow = (end: number, startFrac: number) =>
   cum.map((c) => Math.round(end * (startFrac + (1 - startFrac) * (c / cmax))));
 
+// Decorative mini-trend shapes for the stat-card sparklines (visual only — the
+// headline values come from the live /api/lgu/dashboard stats).
 const registeredS = grow(12480, 0.45);
 const businessS = grow(356, 0.6);
 const verifS = values.map((v) => Math.round((1284 * v) / maxV));
-const totalVerifS = grow(128540, 0.4);
-const validS = totalVerifS.map((t) => Math.round((t * 124910) / 128540));
-const expiredS = totalVerifS.map((t) => Math.round((t * 2180) / 128540));
-const notrecS = totalVerifS.map((t) => Math.round((t * 1450) / 128540));
 
 const fmt = (n: number) => n.toLocaleString();
 
@@ -155,7 +154,16 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function DashboardOverview() {
+export interface DashboardStats {
+  registeredCardholders: number;
+  accreditedBusinesses: number;
+  totalScans: number;
+  validScans: number;
+  invalidScans: number;
+  scansToday: number;
+}
+
+export default function DashboardOverview({ stats }: { stats: DashboardStats }) {
   const N = values.length;
   const [hover, setHover] = useState<number | null>(null);
   const active = hover ?? N - 1;
@@ -163,11 +171,11 @@ export default function DashboardOverview() {
 
   return (
     <div className="space-y-6">
-      {/* Stat cards — update on chart hover */}
+      {/* Stat cards — live totals; sparklines are a decorative trend shape */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <StatCard label="Registered Cardholders" value={fmt(registeredS[active])} delta="2.3%" deltaDir="up" note={note} spark={registeredS} activeIndex={active} />
-        <StatCard label="Accredited Businesses" value={fmt(businessS[active])} delta="5.1%" deltaDir="up" note={note} spark={businessS} activeIndex={active} />
-        <StatCard label="Verifications" value={fmt(verifS[active])} delta="1.4%" deltaDir="down" note={note} spark={verifS} activeIndex={active} />
+        <StatCard label="Registered Cardholders" value={fmt(stats.registeredCardholders)} spark={registeredS} activeIndex={active} />
+        <StatCard label="Accredited Businesses" value={fmt(stats.accreditedBusinesses)} spark={businessS} activeIndex={active} />
+        <StatCard label="Verifications" value={fmt(stats.totalScans)} spark={verifS} activeIndex={active} />
       </div>
 
       {/* Chart + highlight panel */}
@@ -187,21 +195,16 @@ export default function DashboardOverview() {
 
         <Card className="bg-secondary">
           <CardHeader>
-            <CardDescription>
-              Total Verifications{note ? ` · ${note}` : ""}
-            </CardDescription>
+            <CardDescription>Total Verifications</CardDescription>
             <CardTitle className="text-4xl font-extrabold tracking-tight">
-              {fmt(totalVerifS[active])}
+              {fmt(stats.totalScans)}
             </CardTitle>
-            <CardAction>
-              <span className="text-xs font-bold text-[var(--color-valid)]">▲ 20%</span>
-            </CardAction>
           </CardHeader>
           <CardContent className="mt-auto border-t border-border pt-2">
             <div className="divide-y divide-border">
-              <Row label="Valid" value={fmt(validS[active])} />
-              <Row label="Expired" value={fmt(expiredS[active])} />
-              <Row label="Not recognized" value={fmt(notrecS[active])} />
+              <Row label="Valid" value={fmt(stats.validScans)} />
+              <Row label="Invalid" value={fmt(stats.invalidScans)} />
+              <Row label="Today" value={fmt(stats.scansToday)} />
             </div>
           </CardContent>
         </Card>
