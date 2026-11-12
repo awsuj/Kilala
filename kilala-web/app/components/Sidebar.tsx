@@ -14,7 +14,6 @@ const navItems = [
   { label: "Records", href: "/dashboard/records" },
   { label: "Businesses", href: "/dashboard/businesses" },
   { label: "Reports", href: "/dashboard/reports" },
-  { label: "Settings", href: "/dashboard/settings" },
 ];
 
 export default function Sidebar({ adminEmail }: { adminEmail?: string | null }) {
