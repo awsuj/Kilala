@@ -29,7 +29,9 @@ import type {
 import {
   CARD_SYSTEM_LABELS,
   DISABILITY_TYPES,
+  MIN_SENIOR_AGE,
   NATURE_LABELS,
+  ageOn,
   computeExpiry,
   todayLocal,
 } from "./rules";
@@ -39,6 +41,8 @@ type FormState = {
   middleName: string; // Optional, some citizens don't have one
   lastName: string;
   birthday: string;
+  sex: string;
+  address: string;
   cardNumber: string;
   issuingLgu: string;
   issuingDate: string;
@@ -55,6 +59,8 @@ const emptyForm: FormState = {
   middleName: "",
   lastName: "",
   birthday: "",
+  sex: "",
+  address: "",
   cardNumber: "",
   issuingLgu: "",
   issuingDate: "",
@@ -64,7 +70,7 @@ const emptyForm: FormState = {
   cardSystemType: "",
 };
 
-function Field({
+export function Field({
   id,
   label,
   error,
@@ -137,6 +143,9 @@ export default function AddRecordDialog({ existingIds, onAdd }: Props) {
     else if (form.birthday > today)
       e.birthday = "Birthday can't be in the future.";
 
+    if (!form.sex) e.sex = "Select sex.";
+    if (!form.address.trim()) e.address = "Address is required.";
+
     const card = form.cardNumber.trim().toLowerCase();
     if (!card) e.cardNumber = "Card number is required.";
     else if (existingIds.some((id) => id.toLowerCase() === card))
@@ -149,6 +158,16 @@ export default function AddRecordDialog({ existingIds, onAdd }: Props) {
       e.issuingDate = "Issuing date can't be in the future.";
     else if (form.birthday && form.issuingDate < form.birthday)
       e.issuingDate = "Issuing date can't be before the birthday.";
+
+    if (
+      form.privilegeType === "Senior" &&
+      form.birthday &&
+      form.issuingDate &&
+      !e.birthday &&
+      !e.issuingDate &&
+      ageOn(form.birthday, form.issuingDate) < MIN_SENIOR_AGE
+    )
+      e.birthday = `Senior citizens must be at least ${MIN_SENIOR_AGE} on the issuing date.`;
 
     if (!form.privilegeType) e.privilegeType = "Pick a privilege type.";
 
@@ -176,6 +195,8 @@ export default function AddRecordDialog({ existingIds, onAdd }: Props) {
       middleName: form.middleName.trim(),
       lastName: form.lastName.trim(),
       birthdate: form.birthday,
+      sex: form.sex,
+      address: form.address.trim(),
       cardNumber: form.cardNumber.trim(),
       issuingLgu: form.issuingLgu.trim(),
       issuingDate: form.issuingDate,
@@ -264,14 +285,41 @@ export default function AddRecordDialog({ existingIds, onAdd }: Props) {
               </Field>
             </div>
 
-            <Field id="birthday" label="Birthday*" error={errors.birthday}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field id="birthday" label="Birthday*" error={errors.birthday}>
+                <Input
+                  id="birthday"
+                  type="date"
+                  max={today}
+                  value={form.birthday}
+                  onChange={(e) => setField("birthday", e.target.value)}
+                  aria-invalid={!!errors.birthday}
+                />
+              </Field>
+              <Field id="sex" label="Sex*" error={errors.sex}>
+                <select
+                  id="sex"
+                  value={form.sex}
+                  onChange={(e) => setField("sex", e.target.value)}
+                  aria-invalid={!!errors.sex}
+                  className="h-10 w-full appearance-none rounded-md border border-hairline bg-white px-3 text-sm"
+                >
+                  <option value="" disabled>
+                    Select sex
+                  </option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </Field>
+            </div>
+
+            <Field id="address" label="Address*" error={errors.address}>
               <Input
-                id="birthday"
-                type="date"
-                max={today}
-                value={form.birthday}
-                onChange={(e) => setField("birthday", e.target.value)}
-                aria-invalid={!!errors.birthday}
+                id="address"
+                placeholder="House no., street, barangay, city"
+                value={form.address}
+                onChange={(e) => setField("address", e.target.value)}
+                aria-invalid={!!errors.address}
               />
             </Field>
 
