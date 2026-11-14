@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import pool from './db';
 
 dotenv.config();
@@ -11,6 +12,31 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5001;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkilalakey';
+
+const smtpHost = process.env.SMTP_HOST;
+const smtpPort = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587;
+const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+
+const mailTransporter = nodemailer.createTransport(
+  smtpHost
+    ? {
+        host: smtpHost,
+        port: smtpPort,
+        secure: process.env.SMTP_SECURE === 'true' || smtpPort === 465,
+        auth: {
+          user: emailUser,
+          pass: emailPass,
+        },
+      }
+    : {
+        service: 'gmail',
+        auth: {
+          user: emailUser,
+          pass: emailPass,
+        },
+      }
+);
 
 app.use(cors());
 app.use(express.json());
@@ -195,24 +221,151 @@ app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
     }
 });
 
+// Helper to ensure otp_verifications table exists
+const ensureOtpTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS otp_verifications (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL,
+      otp VARCHAR(6) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      verified BOOLEAN DEFAULT FALSE
+    );
+  `);
+};
+
+// 2.1.2 Request Email OTP for Registration
+app.post('/api/auth/request-otp', async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email || typeof email !== 'string' || !email.trim()) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    await ensureOtpTable();
+
+    // Check if email is already used by an existing account
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE LOWER(email) = $1',
+      [normalizedEmail]
+    );
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ error: 'Email is already in use' });
+    }
+
+    const otp = crypto.randomInt(100000, 1000000).toString();
+
+    // Remove any existing OTP entries for this email before saving the new code
+    await pool.query('DELETE FROM otp_verifications WHERE LOWER(email) = $1', [normalizedEmail]);
+
+    await pool.query(
+      `INSERT INTO otp_verifications (email, otp, expires_at, verified)
+       VALUES ($1, $2, NOW() + INTERVAL '10 minutes', FALSE)`,
+      [normalizedEmail, otp]
+    );
+
+    await mailTransporter.sendMail({
+      from: process.env.EMAIL_FROM || emailUser,
+      to: normalizedEmail,
+      subject: 'Your Kilala Verification Code',
+      text: `Your Kilala verification code is: ${otp}\n\nThis code will expire in 10 minutes.`,
+      html: `<div style="font-family: sans-serif; line-height: 1.5;">
+        <h2>Kilala Email Verification</h2>
+        <p>Your 6-digit verification code is:</p>
+        <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">${otp}</p>
+        <p>This code will expire in 10 minutes.</p>
+      </div>`,
+    });
+
+    res.status(200).json({ message: 'OTP sent successfully' });
+  } catch (error) {
+    console.error('Request OTP error:', error);
+    res.status(500).json({ error: 'Failed to send verification code. Please check your email address and try again.' });
+  }
+});
+
+// 2.1.3 Verify Email OTP
+app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and OTP are required' });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const trimmedOtp = String(otp).trim();
+
+  try {
+    await ensureOtpTable();
+
+    const otpRes = await pool.query(
+      `SELECT id FROM otp_verifications
+       WHERE LOWER(email) = $1
+         AND otp = $2
+         AND verified = FALSE
+         AND expires_at > NOW()
+       ORDER BY expires_at DESC
+       LIMIT 1`,
+      [normalizedEmail, trimmedOtp]
+    );
+
+    if (otpRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid or Expired OTP' });
+    }
+
+    await pool.query(
+      `UPDATE otp_verifications
+       SET verified = TRUE, expires_at = NOW() + INTERVAL '10 minutes'
+       WHERE id = $1`,
+      [otpRes.rows[0].id]
+    );
+
+    res.status(200).json({ message: 'OTP verified successfully' });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // 2.2 Claim Pre-Registered Cardholder Account on iOS
 // When an LGU registers a Senior/PWD without an account, the citizen can claim it on iOS
 app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
-  const { lgu_id_number, date_of_birth, email, password } = req.body;
+  const { profile_id, email, password } = req.body;
 
-  if (!lgu_id_number || !date_of_birth || !email || !password) {
+  if (!profile_id || !email || !password) {
     return res.status(400).json({ error: 'All fields are required to claim your ID' });
   }
 
+  const normalizedEmail = String(email).trim().toLowerCase();
+
   const client = await pool.connect();
   try {
+    await ensureOtpTable();
     await client.query('BEGIN');
 
-    // Find unclaimed cardholder matching ID number and birth date
+    // Ensure the email has a verified OTP within a recent timeframe
+    const otpVerificationRes = await client.query(
+      `SELECT id FROM otp_verifications
+       WHERE LOWER(email) = $1
+         AND verified = TRUE
+         AND expires_at > NOW() - INTERVAL '30 minutes'
+       ORDER BY expires_at DESC
+       LIMIT 1`,
+      [normalizedEmail]
+    );
+
+    if (otpVerificationRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Your email must be verified via OTP before claiming your account.' });
+    }
+
+    // Find unclaimed cardholder matching profile_id
     const profileRes = await client.query(
-      `SELECT * FROM cardholder_profiles 
-       WHERE lgu_id_number = $1 AND date_of_birth = $2`,
-      [lgu_id_number, date_of_birth]
+      `SELECT * FROM cardholder_profiles WHERE id = $1`,
+      [profile_id]
     );
 
     if (profileRes.rows.length === 0) {
@@ -221,6 +374,11 @@ app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
     }
 
     const profile = profileRes.rows[0];
+    if (profile.status !== 'ACTIVE') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: `Cannot claim account. Card status is ${profile.status}.` });
+    }
+
     if (profile.user_id) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This ID has already been claimed by an account' });
@@ -231,7 +389,7 @@ app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
       `INSERT INTO users (email, password_hash, role)
        VALUES ($1, $2, 'CARDHOLDER')
        RETURNING id, email, role`,
-      [email, passwordHash]
+      [normalizedEmail, passwordHash]
     );
 
     const newUser = userRes.rows[0];
@@ -239,6 +397,12 @@ app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
     await client.query(
       'UPDATE cardholder_profiles SET user_id = $1 WHERE id = $2',
       [newUser.id, profile.id]
+    );
+
+    // Delete the OTP record to prevent reuse
+    await client.query(
+      'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+      [normalizedEmail]
     );
 
     await client.query('COMMIT');
@@ -1083,6 +1247,7 @@ app.listen(PORT, async () => {
     const client = await pool.connect();
     console.log('[server]: Connected to Supabase PostgreSQL successfully!');
     client.release();
+    await ensureOtpTable();
   } catch (err) {
     console.error('[server]: Failed to connect to the database', err);
   }
