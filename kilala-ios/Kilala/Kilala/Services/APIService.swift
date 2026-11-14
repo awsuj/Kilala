@@ -36,7 +36,7 @@ class APIService {
     static let shared = APIService()
     
     // IMPORTANT: If running on a physical iPhone, change "localhost" to your Mac's IPv4 address (e.g., "192.168.1.15")
-    private let baseURL =  "http://localhost:5001/api" //http://address:5001/api"
+    private let baseURL = "https://kilala-vyn1.onrender.com/api"
     var authToken: String?
     var currentBusinessProfile: BusinessProfile?
     
