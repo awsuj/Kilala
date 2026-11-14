@@ -241,6 +241,114 @@ class APIService {
         return try decoder.decode(SignupVerificationResponse.self, from: data)
     }
 
+    func requestRegistrationOTP(email: String) async throws {
+        guard let url = URL(string: "\(baseURL)/auth/request-otp") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = ["email": email]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 400 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(backendError?.error ?? "Please enter a valid email address.")
+        }
+        
+        if httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(backendError?.error ?? "This email is already in use.")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(backendError?.error ?? "Failed to send verification code. Please try again.")
+        }
+    }
+
+    func verifyOTP(email: String, otp: String) async throws {
+        guard let url = URL(string: "\(baseURL)/auth/verify-otp") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "email": email,
+            "otp": otp
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 400 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(backendError?.error ?? "Invalid or Expired OTP")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(backendError?.error ?? "Unable to verify OTP. Please try again.")
+        }
+    }
+
+    func claimAccount(profileId: UUID, email: String, password: String) async throws -> LoginResponse {
+        guard let url = URL(string: "\(baseURL)/auth/claim-cardholder") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "profile_id": profileId.uuidString,
+            "email": email,
+            "password": password
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 400 || httpResponse.statusCode == 404 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(backendError?.error ?? "Unable to claim account. Please check your details.")
+        }
+        
+        if httpResponse.statusCode == 403 || httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(backendError?.error ?? "This account cannot be claimed.")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(backendError?.error ?? "Unable to complete account creation. Please try again.")
+        }
+        
+        let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
+        self.authToken = loginResponse.token
+        return loginResponse
+    }
+
     func recordTransaction(
         cardholderId: String,
         originalAmount: Double,
