@@ -15,7 +15,7 @@ This directory holds the automated API test collections used by GitHub Actions C
 GitHub Actions will automatically pick up and execute all `.postman_collection.json` files during **Phase 5 (Integration Testing)**.
 
 ## Running Locally:
-Make sure the backend is running (`cd backend && npm run dev` on port 5000), then run:
+Make sure the backend is running (`cd backend && npm run dev` on port 5001), then run:
 ```bash
 npx newman run tests/postman/kilala-api.postman_collection.json
 ```

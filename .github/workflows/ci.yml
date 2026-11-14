@@ -24,6 +24,8 @@ concurrency:
 
 env:
   NODE_VERSION: '20'
+  PORT: '5001'
+  API_BASE_URL: 'http://localhost:5001'
 
 jobs:
   # PHASE 1: Setup & Initialization
@@ -195,12 +197,7 @@ jobs:
           echo "Executing Web Portal Unit Tests..."
           if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
             cd kilala-web
-            # If Playwright is configured, run only chromium to avoid resource contention across 3 projects
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              npx playwright test --project=chromium
-            else
-              npm test --if-present -- --watchAll=false
-            fi
+            npm test --if-present -- --watchAll=false
           elif [ -f "kilala-web/app/components/public/package.json" ]; then
             cd kilala-web/app/components/public
             npm test --if-present -- --watchAll=false
@@ -211,19 +208,10 @@ jobs:
           echo "Executing Mobile Application Unit Tests..."
           if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
             cd kilala-mobile
-            # Support Playwright for mobile web if configured (scoped to chromium)
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              npx playwright test --project=chromium
-            else
-              npm test --if-present -- --watchAll=false
-            fi
+            npm test --if-present -- --watchAll=false
           elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
             cd mobile
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              npx playwright test --project=chromium
-            else
-              npm test --if-present -- --watchAll=false
-            fi
+            npm test --if-present -- --watchAll=false
           fi
 
   # PHASE 4: Application Build
@@ -315,6 +303,23 @@ jobs:
     name: Phase 5 - Integration Testing
     needs: application-build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: kilala_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: 'postgresql://postgres:postgrespassword@localhost:5432/kilala_test'
+      JWT_SECRET: 'supersecretkilalakey'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -323,6 +328,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      - name: Initialize and Seed PostgreSQL Database
+        run: |
+          echo "Initializing database schema and seed data..."
+          export PGPASSWORD=postgrespassword
+          psql -h localhost -U postgres -d kilala_test -f backend/src/schema/schema.sql
+          psql -h localhost -U postgres -d kilala_test -f backend/src/schema/seed.sql
+          echo "Database successfully populated!"
 
       - name: Restore dependency cache
         uses: actions/cache@v4
@@ -346,19 +359,19 @@ jobs:
 
       - name: Start Backend API Service
         run: |
-          echo "Starting Backend API Service in background..."
+          echo "Starting Backend API Service in background on port ${{ env.PORT }}..."
           cd backend
           # Build if not restored from artifact
           if [ ! -d "dist" ]; then
             npm run build
           fi
-          PORT=5000 npm start &
+          PORT=${{ env.PORT }} npm start &
           echo "BACKEND_PID=$!" >> $GITHUB_ENV
 
       - name: Verify API Health Endpoint
         run: |
-          echo "Polling Backend API health endpoint (http://localhost:5000/api/health)..."
-          timeout 30 bash -c 'until curl --silent --fail http://localhost:5000/api/health; do sleep 2; echo "Waiting for Backend API to become ready..."; done'
+          echo "Polling Backend API health endpoint (${{ env.API_BASE_URL }}/api/health)..."
+          timeout 30 bash -c 'until curl --silent --fail "${{ env.API_BASE_URL }}/api/health"; do sleep 2; echo "Waiting for Backend API to become ready..."; done'
           echo "Backend API is up and healthy!"
 
       - name: Run Integration Tests (Frontend-to-Backend Communication)
@@ -367,18 +380,18 @@ jobs:
           # Test Web Portal communication with Backend API
           if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
             cd kilala-web
-            npm run test:integration --if-present
+            API_BASE_URL="${{ env.API_BASE_URL }}" npm run test:integration --if-present
           fi
 
           # Test Backend Integration Endpoint Suite
           if [ -d "backend" ] && [ -f "backend/package.json" ]; then
             cd backend
-            npm run test:integration --if-present
+            PORT=${{ env.PORT }} API_BASE_URL="${{ env.API_BASE_URL }}" npm run test:integration --if-present
           fi
 
       - name: Run Postman API Collections (Newman)
         run: |
-          echo "Executing QA Postman Collections against live API..."
+          echo "Executing QA Postman Collections against live API (${{ env.API_BASE_URL }})..."
           POSTMAN_DIRS="qa-tests tests/postman"
           FOUND=0
           for dir in $POSTMAN_DIRS; do
@@ -395,7 +408,7 @@ jobs:
                     break
                   fi
                 done
-                npx --yes newman run "$collection" $ENV_FILE --global-var "baseUrl=http://localhost:5000" --reporters cli
+                npx --yes newman run "$collection" $ENV_FILE --global-var "baseUrl=${{ env.API_BASE_URL }}" --reporters cli
                 FOUND=1
               done
             fi
