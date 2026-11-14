@@ -192,27 +192,12 @@ jobs:
             npm test --if-present
           fi
 
-      - name: Install Playwright Chromium & OS Dependencies
-        run: |
-          echo "Installing Playwright Chromium browser binary and system dependencies..."
-          if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
-            cd kilala-web
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              npx playwright install --with-deps chromium
-            fi
-          fi
-
       - name: Run Web Portal Unit Tests
         run: |
           echo "Executing Web Portal Unit Tests..."
           if [ -d "kilala-web" ] && [ -f "kilala-web/package.json" ]; then
             cd kilala-web
-            # If Playwright is configured, run only chromium to avoid resource contention across 3 projects
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              API_BASE_URL="${{ env.API_BASE_URL }}" npx playwright test --project=chromium
-            else
-              npm test --if-present -- --watchAll=false
-            fi
+            npm test --if-present -- --watchAll=false
           elif [ -f "kilala-web/app/components/public/package.json" ]; then
             cd kilala-web/app/components/public
             npm test --if-present -- --watchAll=false
@@ -223,19 +208,10 @@ jobs:
           echo "Executing Mobile Application Unit Tests..."
           if [ -d "kilala-mobile" ] && [ -f "kilala-mobile/package.json" ]; then
             cd kilala-mobile
-            # Support Playwright for mobile web if configured (scoped to chromium)
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              API_BASE_URL="${{ env.API_BASE_URL }}" npx playwright test --project=chromium
-            else
-              npm test --if-present -- --watchAll=false
-            fi
+            npm test --if-present -- --watchAll=false
           elif [ -d "mobile" ] && [ -f "mobile/package.json" ]; then
             cd mobile
-            if [ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ]; then
-              API_BASE_URL="${{ env.API_BASE_URL }}" npx playwright test --project=chromium
-            else
-              npm test --if-present -- --watchAll=false
-            fi
+            npm test --if-present -- --watchAll=false
           fi
 
   # PHASE 4: Application Build
