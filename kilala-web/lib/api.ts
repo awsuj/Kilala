@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { AUTH_COOKIE } from "./token";
 
-const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
 
 /**
  * Server-side fetch against the Kilala backend, authenticated with the admin's
