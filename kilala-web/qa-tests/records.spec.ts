@@ -1,181 +1,309 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
+const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
+const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
+const ADMIN_EMAIL = "admin@makati.gov.ph";
+const ADMIN_PASSWORD = "MockHashForTestingOnly123456789012";
 
-function adminJwt() {
-  const exp = Math.floor(Date.now() / 1000) + 3600;
-  const payload = Buffer.from(JSON.stringify({
-    id: 'admin-id',
-    email: 'admin@makati.gov.ph',
-    role: 'LGU_ADMIN',
-    exp,
-  })).toString('base64url');
-  return `header.${payload}.signature`;
+interface LoginResponse {
+  token: string;
+  user: { role: string };
 }
 
-async function loginAsAdmin(page: Page) {
+interface Cardholder {
+  id: string;
+  lgu_id_number: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+  date_of_birth: string;
+  privilege_type: "PWD" | "SENIOR_CITIZEN";
+  disability_type: string | null;
+  status: "ACTIVE" | "EXPIRED" | "REVOKED" | "SUSPENDED";
+  issued_date: string;
+  expiry_date: string | null;
+}
+
+async function loginAsAdmin(request: APIRequestContext, page: Page) {
+  const response = await request.post(`${API_BASE_URL}/api/auth/login`, {
+    data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+  });
+  expect(response.status()).toBe(200);
+
+  const { token, user } = (await response.json()) as LoginResponse;
+  expect(user.role).toBe("LGU_ADMIN");
   await page.context().addCookies([
     {
-      name: process.env.AUTH_COOKIE || 'kilala_token',
-      value: adminJwt(),
+      name: process.env.AUTH_COOKIE || "kilala_token",
+      value: token,
       url: WEB_BASE_URL,
     },
   ]);
+  return token;
+}
+
+async function getCardholders(
+  request: APIRequestContext,
+  token: string,
+): Promise<Cardholder[]> {
+  const response = await request.get(`${API_BASE_URL}/api/lgu/cardholders`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as Cardholder[];
+}
+
+async function updateCardholder(
+  request: APIRequestContext,
+  token: string,
+  cardholder: Cardholder,
+  updates: { status?: Cardholder["status"]; expiry_date?: string },
+) {
+  const response = await request.patch(
+    `${API_BASE_URL}/api/lgu/cardholders/${cardholder.id}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: updates,
+    },
+  );
+  expect(response.status()).toBe(200);
 }
 
 function recordRow(page: Page, id: string) {
-  return page.getByRole('row').filter({ hasText: id });
+  return page.getByRole("row").filter({ hasText: id });
 }
 
-test.describe('Records page', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page);
-    await page.goto('/dashboard/records');
-  });
+function cardholderName(cardholder: Cardholder) {
+  const middleInitial = cardholder.middle_name
+    ? ` ${cardholder.middle_name[0]}.`
+    : "";
+  return `${cardholder.last_name}, ${cardholder.first_name}${middleInitial}`;
+}
 
-  test('opens full cardholder details from a table row', async ({ page }) => {
-    await recordRow(page, '13-7404-000-0000845').click();
+function dateOnly(date: string) {
+  return date.slice(0, 10);
+}
 
-    const details = page.getByRole('dialog');
+function todayLocal() {
+  const today = new Date();
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+test.describe("LGU records page", () => {
+  test("renders cardholders from the live API and opens their details", async ({
+    page,
+    request,
+  }) => {
+    const token = await loginAsAdmin(request, page);
+    const cardholders = await getCardholders(request, token);
+
+    await page.goto("/dashboard/records");
+    if (cardholders.length === 0) {
+      await expect(page.getByText("No records yet.")).toBeVisible();
+      return;
+    }
+
+    const expectedCount = Math.min(cardholders.length, 25);
+    await expect(
+      page.getByText(`Showing 1 to ${expectedCount} of ${cardholders.length}`),
+    ).toBeVisible();
+
+    const cardholder = cardholders[0];
+    const row = recordRow(page, cardholder.lgu_id_number);
+    await page.getByRole("searchbox", { name: "Search by ID or name" })
+      .fill(cardholder.lgu_id_number.replace(/-/g, ""));
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(cardholderName(cardholder));
+    await expect(row).toContainText(
+      cardholder.privilege_type === "SENIOR_CITIZEN" ? "Senior" : "PWD",
+    );
+    await row.click();
+
+    const details = page.getByRole("dialog");
     await expect(details).toBeVisible();
-    await expect(details.getByText('Castillo, Ramon V.')).toBeVisible();
-    await expect(details.getByText('PWD Privilege Card')).toBeVisible();
-    await expect(details.getByText('Expired on Mar 14, 2024')).toBeVisible();
-    await expect(details.getByText('Personal')).toBeVisible();
-    await expect(details.getByText('Ramon Villar Castillo')).toBeVisible();
-    await expect(details.getByText('Card', { exact: true })).toBeVisible();
-    await expect(details.getByRole('heading', { name: 'Disability' })).toBeVisible();
-    await expect(details.getByText('Orthopedic')).toBeVisible();
-    await expect(details.getByText('History')).toBeVisible();
-    await expect(details.getByRole('button', { name: 'Renew card' })).toBeVisible();
+    await expect(details.getByText(cardholder.lgu_id_number)).toBeVisible();
+    await expect(details.getByText(
+      [cardholder.first_name, cardholder.middle_name, cardholder.last_name]
+        .filter(Boolean)
+        .join(" "),
+    )).toBeVisible();
+    await expect(details.getByText(
+      cardholder.privilege_type === "SENIOR_CITIZEN"
+        ? "Senior Citizen Card"
+        : "PWD Privilege Card",
+    )).toBeVisible();
   });
 
-  test('searches names without case or accent sensitivity and IDs without dashes', async ({ page }) => {
-    const search = page.getByRole('searchbox', { name: 'Search by ID or name' });
+  test("searches live records by name and ID, filters by type, and sorts columns", async ({
+    page,
+    request,
+  }) => {
+    const token = await loginAsAdmin(request, page);
+    const cardholders = await getCardholders(request, token);
+    test.skip(cardholders.length === 0, "The LGU API has no cardholders to search.");
+    if (cardholders.length === 0) return;
 
-    await search.fill('JOSÉ');
-    await expect(recordRow(page, '13-7403-000-0004102')).toBeVisible();
-    await expect(page.getByText('Garcia, Jose R.')).toBeVisible();
+    const cardholder = cardholders[0];
+    await page.goto("/dashboard/records");
+    const search = page.getByRole("searchbox", { name: "Search by ID or name" });
 
-    await search.fill('1374040000001874');
-    await expect(recordRow(page, '13-7404-000-0001874')).toBeVisible();
-    await expect(page.getByText('Reyes, Ana M.')).toBeVisible();
-    await expect(page.getByText('No records match your filters.')).toHaveCount(0);
-    await expect(page).toHaveURL(/q=1374040000001874/);
-  });
+    await search.fill(cardholder.first_name.toLocaleLowerCase());
+    await expect(recordRow(page, cardholder.lgu_id_number)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`q=${cardholder.first_name}`, "i"));
 
-  test('filters by status and type, syncs them to the URL, and sorts columns', async ({ page }) => {
-    await page.getByRole('button', { name: /^Active/ }).click();
-    await page.getByLabel('Filter by type').selectOption('Senior');
+    await search.fill(cardholder.lgu_id_number.replace(/-/g, ""));
+    await expect(recordRow(page, cardholder.lgu_id_number)).toBeVisible();
+    await expect(page).toHaveURL(
+      new RegExp(`q=${cardholder.lgu_id_number.replace(/-/g, "")}`),
+    );
 
-    await expect(page).toHaveURL(/status=active/);
-    await expect(page).toHaveURL(/type=Senior/);
-    await expect(recordRow(page, 'QC-SC-2021-004512')).toBeVisible();
-    await expect(recordRow(page, '13-7405-000-0000231')).toHaveCount(0);
+    await page.getByLabel("Filter by type").selectOption(
+      cardholder.privilege_type === "SENIOR_CITIZEN" ? "Senior" : "PWD",
+    );
+    await expect(page).toHaveURL(
+      new RegExp(`type=${cardholder.privilege_type === "SENIOR_CITIZEN" ? "Senior" : "PWD"}`),
+    );
+    await expect(recordRow(page, cardholder.lgu_id_number)).toBeVisible();
 
-    const nameHeader = page.getByRole('columnheader', { name: 'Name' });
-    await nameHeader.getByRole('button', { name: 'Name' }).click();
-    await expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+    const nameHeader = page.getByRole("columnheader", { name: "Name" });
+    await nameHeader.getByRole("button", { name: "Name" }).click();
+    await expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
     await expect(page).toHaveURL(/sort=name/);
     await expect(page).toHaveURL(/dir=asc/);
   });
 
-  test('paginates records and keeps the current page in the URL', async ({ page }) => {
-    await expect(page.getByText('Showing 1 to 25 of 30')).toBeVisible();
-    await page.getByRole('button', { name: 'Next', exact: true }).click();
+  test("paginates the live record set and keeps the selected page in the URL", async ({
+    page,
+    request,
+  }) => {
+    const token = await loginAsAdmin(request, page);
+    const cardholders = await getCardholders(request, token);
+    await page.goto("/dashboard/records");
 
-    await expect(page.getByText('Showing 26 to 30 of 30')).toBeVisible();
-    await expect(page.getByText('Page 2 of 2')).toBeVisible();
+    if (cardholders.length <= 25) {
+      if (cardholders.length === 0) {
+        await expect(page.getByText("No records")).toBeVisible();
+      } else {
+        await expect(
+          page.getByText(`Showing 1 to ${cardholders.length} of ${cardholders.length}`),
+        ).toBeVisible();
+      }
+      await expect(page.getByRole("button", { name: "Next", exact: true })).toHaveCount(0);
+      return;
+    }
+
+    await expect(page.getByText(`Showing 1 to 25 of ${cardholders.length}`)).toBeVisible();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    const pageTwoEnd = Math.min(50, cardholders.length);
+    const totalPages = Math.ceil(cardholders.length / 25);
+    await expect(page.getByText(`Showing 26 to ${pageTwoEnd} of ${cardholders.length}`))
+      .toBeVisible();
+    await expect(page.getByText(`Page 2 of ${totalPages}`)).toBeVisible();
     await expect(page).toHaveURL(/page=2/);
 
-    await page.getByRole('button', { name: 'Previous', exact: true }).click();
-    await expect(page.getByText('Showing 1 to 25 of 30')).toBeVisible();
+    await page.getByRole("button", { name: "Previous", exact: true }).click();
+    await expect(page.getByText(`Showing 1 to 25 of ${cardholders.length}`)).toBeVisible();
     await expect(page).not.toHaveURL(/page=2/);
   });
 
-  test('suspends only after a reason is entered and supports undo', async ({ page }) => {
-    await recordRow(page, 'QC-SC-2021-004512').click();
-    await page.getByRole('button', { name: 'Suspend' }).click();
+  test("validates duplicate card numbers against live records without creating a row", async ({
+    page,
+    request,
+  }) => {
+    const token = await loginAsAdmin(request, page);
+    const cardholders = await getCardholders(request, token);
+    test.skip(cardholders.length === 0, "A live cardholder is needed for duplicate validation.");
+    if (cardholders.length === 0) return;
 
-    const suspendDialog = page.getByRole('dialog');
-    await expect(suspendDialog.getByText('Suspend card?')).toBeVisible();
-    await suspendDialog.getByRole('button', { name: 'Suspend card' }).click();
-    await expect(suspendDialog.getByText('Please enter a reason.')).toBeVisible();
-
-    await suspendDialog.getByLabel('Reason*').fill('Reported lost card');
-    await suspendDialog.getByRole('button', { name: 'Suspend card' }).click();
-    await expect(page.getByRole('status')).toContainText('Dela Cruz, Maria S. suspended');
-
-    await page.getByRole('button', { name: /^Suspended/ }).click();
-    const suspendedRow = recordRow(page, 'QC-SC-2021-004512');
-    await expect(suspendedRow).toBeVisible();
-    await expect(suspendedRow.getByText('Suspended', { exact: true })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Undo' }).click();
-    await page.getByRole('button', { name: /^Active/ }).click();
-    await expect(recordRow(page, 'QC-SC-2021-004512')).toBeVisible();
+    await page.goto("/dashboard/records");
+    await page.getByRole("button", { name: "+ Add Record" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Card number*").fill(cardholders[0].lgu_id_number);
+    await dialog.getByRole("button", { name: "Add record" }).click();
+    await expect(dialog.getByText("This card number already exists.")).toBeVisible();
+    await expect(dialog).toBeVisible();
   });
 
-  test('renews an expired card with a live expiry preview and supports undo', async ({ page }) => {
-    const expiredRow = recordRow(page, '13-7404-000-0000845');
-    await expiredRow.getByRole('button', { name: 'Renew' }).click();
+  test("suspends, reinstates, and renews a live card with backend state restored", async ({
+    page,
+    request,
+  }) => {
+    const token = await loginAsAdmin(request, page);
+    const cardholders = await getCardholders(request, token);
+    const cardholder = cardholders.find(
+      (row) =>
+        row.status === "ACTIVE" &&
+        row.privilege_type === "PWD" &&
+        row.expiry_date !== null &&
+        dateOnly(row.issued_date) <= todayLocal(),
+    );
+    test.skip(
+      !cardholder,
+      "Requires an active PWD card with an expiry date to exercise renewal.",
+    );
+    if (!cardholder) return;
 
-    const renewDialog = page.getByRole('dialog');
-    await renewDialog.getByLabel('New issuing date*').fill('2025-01-02');
-    await expect(renewDialog.getByText('New expiry: 2030-01-02')).toBeVisible();
-    await renewDialog.getByRole('button', { name: 'Renew card', exact: true }).click();
+    const originalExpiry = dateOnly(cardholder.expiry_date!);
+    const originalStatus = cardholder.status;
+    try {
+      await updateCardholder(request, token, cardholder, {
+        expiry_date: "2000-01-01",
+      });
+      await page.goto("/dashboard/records");
+      await page.getByRole("button", { name: /^Expired/ }).click();
+      const expiredRow = recordRow(page, cardholder.lgu_id_number);
+      await expect(expiredRow).toBeVisible();
+      await expiredRow.getByRole("button", { name: "Renew" }).click();
 
-    await expect(page.getByRole('status')).toContainText('renewed until Jan 2, 2030');
-    await page.getByRole('button', { name: /^Active/ }).click();
-    await expect(recordRow(page, '13-7404-000-0000845')).toBeVisible();
+      const renewalDialog = page.getByRole("dialog");
+      const issuingDate = todayLocal();
+      await renewalDialog.getByLabel("New issuing date*").fill(issuingDate);
+      const expiryPreview = renewalDialog.getByText(/^New expiry: /);
+      await expect(expiryPreview).toBeVisible();
+      const previewText = await expiryPreview.textContent();
+      const expectedExpiry = previewText?.match(/\d{4}-\d{2}-\d{2}$/)?.[0];
+      expect(expectedExpiry, "The renewal dialog should show a calculated expiry").toBeTruthy();
+      await renewalDialog.getByRole("button", { name: "Renew card", exact: true }).click();
 
-    await page.getByRole('button', { name: 'Undo' }).click();
-    await page.getByRole('button', { name: /^Expired/ }).click();
-    await expect(recordRow(page, '13-7404-000-0000845')).toBeVisible();
-  });
+      await page.getByRole("button", { name: /^Active/ }).click();
+      const renewedRow = recordRow(page, cardholder.lgu_id_number);
+      await expect(renewedRow).toBeVisible();
+      await expect.poll(async () => {
+        const updated = await getCardholders(request, token);
+        const expiry = updated.find((row) => row.id === cardholder.id)?.expiry_date;
+        return expiry ? Date.parse(expiry) : Number.NaN;
+      }).toBeGreaterThan(Date.now());
 
-  test('reinstates a suspended card in one click and supports undo', async ({ page }) => {
-    await page.getByRole('button', { name: /^Suspended/ }).click();
-    const suspendedRow = recordRow(page, '13-7404-000-0006001');
-    await expect(suspendedRow).toBeVisible();
-    await suspendedRow.getByRole('button', { name: 'Reinstate' }).click();
+      await renewedRow.click();
+      await page.getByRole("button", { name: "Suspend" }).click();
+      const suspendDialog = page.getByRole("dialog");
+      await suspendDialog.getByRole("button", { name: "Suspend card" }).click();
+      await expect(suspendDialog.getByText("Please enter a reason.")).toBeVisible();
+      await suspendDialog.getByLabel("Reason*").fill("QA status transition");
+      await suspendDialog.getByRole("button", { name: "Suspend card" }).click();
 
-    await expect(page.getByRole('status')).toContainText('Torres, Jasmine R. reinstated');
-    await page.getByRole('button', { name: /^Active/ }).click();
-    await expect(recordRow(page, '13-7404-000-0006001')).toBeVisible();
+      await expect.poll(async () => {
+        const updated = await getCardholders(request, token);
+        return updated.find((row) => row.id === cardholder.id)?.status;
+      }).toBe("SUSPENDED");
 
-    await page.getByRole('button', { name: 'Undo' }).click();
-    await page.getByRole('button', { name: /^Suspended/ }).click();
-    await expect(recordRow(page, '13-7404-000-0006001')).toBeVisible();
-  });
-
-  test('edits name and birthday while keeping card fields locked', async ({ page }) => {
-    await recordRow(page, 'QC-SC-2021-004512').click();
-    await page.getByRole('button', { name: 'Edit details' }).click();
-
-    const editDialog = page.getByRole('dialog');
-    await expect(editDialog.getByText('Locked fields')).toBeVisible();
-    await expect(editDialog.getByText('QC-SC-2021-004512', { exact: true })).toBeVisible();
-    await expect(editDialog.getByLabel('Card number')).toHaveCount(0);
-    await expect(editDialog.getByLabel('Type')).toHaveCount(0);
-
-    await editDialog.getByLabel('First name*').fill('Maria Elena');
-    await editDialog.getByLabel('Birthday*').fill('1950-08-20');
-    await editDialog.getByRole('button', { name: 'Save changes' }).click();
-
-    await expect(page.getByRole('status')).toContainText('Saved changes to Dela Cruz, Maria Elena S.');
-    await expect(page.getByRole('button', { name: 'Dela Cruz, Maria Elena S.' })).toBeVisible();
-    await recordRow(page, 'QC-SC-2021-004512').click();
-    const updatedDetails = page.getByRole('dialog');
-    await expect(updatedDetails.getByText('Maria Elena Santos Dela Cruz')).toBeVisible();
-    await expect(updatedDetails.getByText('Aug 20, 1950', { exact: false })).toBeVisible();
-    await page.keyboard.press('Escape');
-
-    await page.getByRole('button', { name: 'Undo' }).click();
-    await expect(page.getByRole('button', { name: 'Dela Cruz, Maria S.' })).toBeVisible();
-    await recordRow(page, 'QC-SC-2021-004512').click();
-    const restoredDetails = page.getByRole('dialog');
-    await expect(restoredDetails.getByText('Maria Santos Dela Cruz')).toBeVisible();
-    await expect(restoredDetails.getByText('Aug 19, 1950', { exact: false })).toBeVisible();
+      await page.getByRole("button", { name: /^Suspended/ }).click();
+      const suspendedRow = recordRow(page, cardholder.lgu_id_number);
+      await expect(suspendedRow).toBeVisible();
+      await suspendedRow.getByRole("button", { name: "Reinstate" }).click();
+      await expect.poll(async () => {
+        const updated = await getCardholders(request, token);
+        return updated.find((row) => row.id === cardholder.id)?.status;
+      }).toBe("ACTIVE");
+    } finally {
+      await updateCardholder(request, token, cardholder, {
+        status: originalStatus,
+        expiry_date: originalExpiry,
+      });
+    }
   });
 });

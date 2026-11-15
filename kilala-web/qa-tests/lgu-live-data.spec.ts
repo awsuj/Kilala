@@ -47,6 +47,30 @@ interface VerificationLog {
   branch_name: string | null;
 }
 
+interface Cardholder {
+  id: string;
+  lgu_id_number: string;
+  first_name: string;
+  last_name: string;
+  privilege_type: 'PWD' | 'SENIOR_CITIZEN';
+  status: 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'SUSPENDED';
+}
+
+interface DiscountsResponse {
+  summary: {
+    totalDiscounts: number;
+    totalSales: number;
+    discountedTxns: number;
+  };
+  byBusiness: {
+    business_name: string;
+    branch_name: string | null;
+    txns: number;
+    sales: number;
+    discounts: number;
+  }[];
+}
+
 async function loginAsAdmin(request: APIRequestContext, page: Page) {
   const response = await request.post(`${API_BASE_URL}/api/auth/login`, {
     data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
@@ -79,10 +103,17 @@ async function getApiData<T>(
 
 const formatNumber = (value: string | number) =>
   Number(value).toLocaleString('en-US');
+const formatPeso = (value: number) =>
+  `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 test.describe('LGU live backend data', () => {
   test('LGU dashboard, businesses, and logs APIs require an admin token', async ({ request }) => {
-    for (const path of ['/api/lgu/dashboard', '/api/lgu/businesses', '/api/lgu/logs']) {
+    for (const path of [
+      '/api/lgu/dashboard',
+      '/api/lgu/cardholders',
+      '/api/lgu/businesses',
+      '/api/lgu/logs',
+    ]) {
       const response = await request.get(`${API_BASE_URL}${path}`);
       expect(response.status(), `${path} should require authentication`).toBe(401);
     }
@@ -98,7 +129,39 @@ test.describe('LGU live backend data', () => {
     expect(response.status()).toBe(200);
   });
 
-  test('dashboard renders live totals and identifies its remaining sample data', async ({
+  test('cardholder list and filters return live data for the authenticated LGU', async ({
+    page,
+    request,
+  }) => {
+    const token = await loginAsAdmin(request, page);
+    const allResponse = await request.get(`${API_BASE_URL}/api/lgu/cardholders`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(allResponse.status()).toBe(200);
+    const cardholders = (await allResponse.json()) as Cardholder[];
+    expect(Array.isArray(cardholders)).toBe(true);
+
+    if (cardholders.length === 0) return;
+    const expected = cardholders[0];
+    expect(expected.id).toBeTruthy();
+    expect(expected.lgu_id_number).toBeTruthy();
+    expect(expected.first_name).toBeTruthy();
+    expect(expected.last_name).toBeTruthy();
+
+    const filteredResponse = await request.get(
+      `${API_BASE_URL}/api/lgu/cardholders?search=${encodeURIComponent(expected.lgu_id_number)}&status=${expected.status}&privilege_type=${expected.privilege_type}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(filteredResponse.status()).toBe(200);
+    const filtered = (await filteredResponse.json()) as Cardholder[];
+    expect(filtered.some((cardholder) => cardholder.id === expected.id)).toBe(true);
+    expect(filtered.every((cardholder) => cardholder.status === expected.status)).toBe(true);
+    expect(
+      filtered.every((cardholder) => cardholder.privilege_type === expected.privilege_type),
+    ).toBe(true);
+  });
+
+  test('dashboard renders live totals and available breakdowns from the API', async ({
     page,
     request,
   }) => {
@@ -122,8 +185,8 @@ test.describe('LGU live backend data', () => {
     }
 
     const verificationPanel = page
-      .getByText('Total Verifications', { exact: true })
-      .locator('../..');
+      .locator('[data-slot="card"]')
+      .filter({ hasText: 'Verification results' });
     await expect(verificationPanel).toContainText(formatNumber(stats.scanStats.total_scans));
     for (const [label, value] of [
       ['Valid', stats.scanStats.valid_scans],
@@ -134,9 +197,8 @@ test.describe('LGU live backend data', () => {
         .toContainText(formatNumber(value));
     }
 
-    await expect(page.getByText('Cardholders by Barangay', { exact: true }).locator('..'))
-      .toContainText('Sample data');
-    await expect(page.getByText('than last month')).toHaveCount(0);
+    await expect(page.getByText('Cardholder status', { exact: true })).toBeVisible();
+    await expect(page.getByText('Cardholders by Barangay', { exact: true })).toHaveCount(0);
   });
 
   test('businesses list reflects live backend data and revoke/re-accredit updates the backend', async ({
@@ -151,8 +213,6 @@ test.describe('LGU live backend data', () => {
     );
     const business = businesses.find((item) => item.email === 'qa.business@example.test');
 
-    console.log('Business API data:', business);
-    
     expect(business, 'The QA Test Business fixture should exist in the LGU').toBeDefined();
     if (!business) return;
 
@@ -195,19 +255,39 @@ test.describe('LGU live backend data', () => {
     }
   });
 
-  test('reports renders live verification rows and labels discount summaries as pending sample data', async ({
+  test('reports renders live discounts and verification rows from the backend', async ({
     page,
     request,
   }) => {
     const token = await loginAsAdmin(request, page);
     const logs = await getApiData<VerificationLog[]>(request, '/api/lgu/logs', token);
+    const discounts = await getApiData<DiscountsResponse>(
+      request,
+      '/api/lgu/discounts',
+      token,
+    );
 
     await page.goto('/dashboard/reports');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
     await expect(page.getByText('Total Discounts Provided', { exact: true }).locator('..'))
-      .toContainText('Sample — endpoint pending');
+      .toContainText(formatPeso(discounts.summary.totalDiscounts));
     await expect(page.getByText('Total Sales Recorded', { exact: true }).locator('..'))
-      .toContainText('Sample — endpoint pending');
+      .toContainText(formatPeso(discounts.summary.totalSales));
+
+    const businessTable = page
+      .locator('[data-slot="card"]')
+      .filter({ hasText: 'Discounts provided by business' })
+      .getByRole('table');
+    const businessRows = businessTable.getByRole('row');
+    await expect(businessRows).toHaveCount(discounts.byBusiness.length + 1);
+    if (discounts.byBusiness.length > 0) {
+      const business = discounts.byBusiness[0];
+      const row = businessRows.filter({ hasText: business.business_name }).first();
+      await expect(row).toContainText(business.branch_name || '—');
+      await expect(row).toContainText(String(business.txns));
+      await expect(row).toContainText(formatPeso(business.sales));
+      await expect(row).toContainText(formatPeso(business.discounts));
+    }
 
     const auditCard = page.getByText('Verification audit log', { exact: true }).locator('../..');
     const auditTable = auditCard.getByRole('table');
