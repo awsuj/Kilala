@@ -1073,6 +1073,67 @@ app.get(
   }
 );
 
+// 5.8 LGU Discounts & Sales Report (aggregated from the transactions table)
+app.get(
+  '/api/lgu/discounts',
+  authenticateToken,
+  requireRole(['LGU_ADMIN']),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = await getAdminContext(req.user!.id);
+      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+
+      // Transactions are scoped to the LGU via the cardholder's lgu_id. Note
+      // transactions.business_id references users(id), so businesses join on
+      // business_profiles.user_id.
+      const summaryQuery = await pool.query(
+        `SELECT
+           COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounts,
+           COALESCE(SUM(t.original_amount), 0) AS total_sales,
+           COUNT(*) AS discounted_txns
+         FROM transactions t
+         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+         WHERE cp.lgu_id = $1`,
+        [admin.lgu_id]
+      );
+
+      const byBusinessQuery = await pool.query(
+        `SELECT bp.business_name,
+                bp.branch_name,
+                COUNT(t.id) AS txns,
+                COALESCE(SUM(t.original_amount), 0) AS sales,
+                COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS discounts
+         FROM transactions t
+         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+         JOIN business_profiles bp ON bp.user_id = t.business_id
+         WHERE cp.lgu_id = $1
+         GROUP BY bp.id, bp.business_name, bp.branch_name
+         ORDER BY discounts DESC`,
+        [admin.lgu_id]
+      );
+
+      const s = summaryQuery.rows[0];
+      res.status(200).json({
+        summary: {
+          totalDiscounts: Number(s.total_discounts),
+          totalSales: Number(s.total_sales),
+          discountedTxns: Number(s.discounted_txns)
+        },
+        byBusiness: byBusinessQuery.rows.map((r) => ({
+          business_name: r.business_name,
+          branch_name: r.branch_name,
+          txns: Number(r.txns),
+          sales: Number(r.sales),
+          discounts: Number(r.discounts)
+        }))
+      });
+    } catch (error) {
+      console.error('Error fetching LGU discounts:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 // ============================================================================
 // SERVER INITIALIZATION
 // ============================================================================
