@@ -28,11 +28,13 @@ test.describe('Sprint 1 - dashboard foundation', () => {
     await loginForDashboard(page);
   });
 
-  test('dashboard shows core LGU sections and records table', async ({ page }) => {
+  // The dashboard now renders live data from GET /api/lgu/dashboard instead of
+  // the old mock "Cardholders by Barangay" table (which has no backing schema
+  // column), so this asserts the backend-independent shell rather than seeded
+  // rows. Live-data content is covered by the Sprint 2 integration suite.
+  test('dashboard shell renders with heading and search', async ({ page }) => {
     await page.goto('/dashboard');
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    await expect(page.getByText('Cardholders by Barangay', { exact: true })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'Poblacion' })).toBeVisible();
     await expect(page.getByRole('searchbox', { name: 'Search records' })).toBeVisible();
   });
 

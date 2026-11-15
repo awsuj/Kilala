@@ -8,7 +8,6 @@ const TITLES: Record<string, string> = {
   "/dashboard/records": "Records",
   "/dashboard/businesses": "Businesses",
   "/dashboard/reports": "Reports",
-  "/dashboard/settings": "Settings",
 };
 
 function titleFor(pathname: string): string {
