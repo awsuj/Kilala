@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE, ALLOWED_ROLE } from "@/lib/token";
 
-const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
 
 export interface LoginState {
   error?: string;
