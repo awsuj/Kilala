@@ -133,6 +133,8 @@ test.describe('POST /api/lgu-admins contracts', () => {
       },
     });
     const body = await res.json();
+    expect(res.status()).toBe(200);
+    expect(body.token).toBeTruthy();
     token = body.token;
   });
 
