@@ -111,4 +111,13 @@ test.describe('Sprint 1 - API smoke contracts', () => {
       error: 'All fields are required to claim your ID',
     });
   });
+
+  test('GET /api/lgus returns the Metro Manila cities', async ({ request }) => {
+    const res = await request.get(`${API_BASE_URL}/api/lgus`);
+    expect(res.status()).toBe(200);
+    const names = (await res.json()).map((l: { municipality_name: string }) => l.municipality_name);
+    for (const city of ['Quezon City', 'Manila', 'Taguig', 'Makati City', 'Pasig', 'Caloocan']) {
+      expect(names).toContain(city);
+    }
+  });
 });
