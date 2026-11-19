@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,6 +86,7 @@ type Props = {
 };
 
 export default function CreateAccountDialog({ lgus }: Props) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Errors>({});
@@ -145,6 +147,8 @@ export default function CreateAccountDialog({ lgus }: Props) {
     }
 
     setSuccess(true);
+    // Re-fetch the server component so the new account shows in the table.
+    router.refresh();
   };
 
   return (

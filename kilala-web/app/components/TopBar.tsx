@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search, Bell } from "lucide-react";
+import { Bell } from "lucide-react";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -29,22 +29,6 @@ export default function TopBar() {
       </h1>
 
       <div className="flex items-center gap-3">
-        <div className="relative">
-          <label htmlFor="search" className="sr-only">
-            Search records
-          </label>
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-ink"
-            aria-hidden="true"
-          />
-          <input
-            id="search"
-            type="search"
-            placeholder="Search records..."
-            className="kilala-input w-64 bg-white py-2.5 pl-9 text-sm"
-          />
-        </div>
-
         <button
           type="button"
           aria-label="Notifications"

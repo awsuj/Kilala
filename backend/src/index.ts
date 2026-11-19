@@ -1205,6 +1205,29 @@ app.post(
   }
 );
 
+// 6.2 List LGU Admin Accounts (Web Portal)
+app.get(
+  '/api/lgu-admins',
+  authenticateToken,
+  requireRole(['LGU_ADMIN']),
+  async (_req: AuthRequest, res: Response) => {
+    try {
+      const result = await pool.query(
+        `SELECT la.id, u.email, la.first_name, la.last_name, la.department,
+                la.position, l.municipality_name, u.is_active, u.created_at
+         FROM lgu_admins la
+         JOIN users u ON u.id = la.user_id
+         JOIN lgus l ON l.id = la.lgu_id
+         ORDER BY u.created_at DESC`
+      );
+      res.status(200).json(result.rows);
+    } catch (error) {
+      console.error('Error fetching LGU admins:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 // ============================================================================
 // SERVER INITIALIZATION
 // ============================================================================
