@@ -1,5 +1,6 @@
 import DashboardOverview, { type DashboardStats } from "./dashboard-overview";
 import { apiFetch, ApiError } from "@/lib/api";
+import { getLguIdParam } from "@/lib/city";
 import {
   Card,
   CardHeader,
@@ -26,9 +27,9 @@ interface DashboardResponse {
   };
 }
 
-async function loadStats(): Promise<DashboardStats | { error: string }> {
+async function loadStats(lguParam: string): Promise<DashboardStats | { error: string }> {
   try {
-    const d = await apiFetch<DashboardResponse>("/api/lgu/dashboard");
+    const d = await apiFetch<DashboardResponse>(`/api/lgu/dashboard${lguParam}`);
     return {
       registeredCardholders: Number(d.cardholderStats.total_cardholders),
       accreditedBusinesses: Number(d.totalAccreditedBusinesses),
@@ -46,7 +47,9 @@ async function loadStats(): Promise<DashboardStats | { error: string }> {
 }
 
 export default async function DashboardPage() {
-  const stats = await loadStats();
+  const lguParam = await getLguIdParam();
+
+  const stats = await loadStats(lguParam);
 
   if ("error" in stats) {
     return (
