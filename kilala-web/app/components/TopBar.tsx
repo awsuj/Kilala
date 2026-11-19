@@ -45,6 +45,12 @@ export default function TopBar({ role, lgus = [], selectedCity }: Props) {
     router.refresh();
   };
 
+  // base-ui's SelectValue renders the raw value (the LGU id) unless given an
+  // items map to look up each value's label.
+  const cityItems = Object.fromEntries(
+    lgus.map((lgu) => [lgu.id, lgu.municipality_name]),
+  );
+
   return (
     <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-3">
       <h1 className="text-2xl font-extrabold tracking-tight text-ink">
@@ -54,6 +60,7 @@ export default function TopBar({ role, lgus = [], selectedCity }: Props) {
       <div className="flex items-center gap-3">
         {role === "SUPERADMIN" && (
           <Select
+            items={cityItems}
             value={selectedCity ?? ""}
             onValueChange={handleCityChange}
           >

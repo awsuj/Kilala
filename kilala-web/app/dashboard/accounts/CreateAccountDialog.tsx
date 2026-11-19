@@ -183,6 +183,9 @@ export default function CreateAccountDialog({ lgus }: Props) {
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <Field id="lgu_id" label="City" error={errors.lgu_id}>
                 <Select
+                  items={Object.fromEntries(
+                    lgus.map((lgu) => [lgu.id, lgu.municipality_name]),
+                  )}
                   value={form.lgu_id}
                   onValueChange={(v: string | null) => setField("lgu_id", v ?? "")}
                 >
