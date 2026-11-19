@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { AUTH_COOKIE, isAllowedRole } from "@/lib/token";
+import { AUTH_COOKIE, isAllowedRole, landingPathForRole } from "@/lib/token";
 
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
 
@@ -62,5 +62,5 @@ export async function loginAction(
     path: "/",
   });
 
-  redirect(user?.role === "SUPERADMIN" ? "/dashboard/accounts" : "/dashboard");
+  redirect(landingPathForRole(user?.role));
 }

@@ -33,6 +33,7 @@ test.describe('SUPERADMIN RBAC', () => {
   test('LGU_ADMIN can access /dashboard and stays on dashboard', async ({ page }) => {
     await loginWithRole(page, 'LGU_ADMIN');
     await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard(\/)?$/);
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   });
 });
