@@ -126,10 +126,11 @@ test.describe('POST /api/lgu-admins contracts', () => {
   let token: string;
 
   test.beforeAll(async ({ request }) => {
+    // These endpoints are SUPERADMIN-only since Task 1; log in as super admin.
     const res = await request.post(`${API_BASE_URL}/api/auth/login`, {
       data: {
-        email: 'admin@makati.gov.ph',
-        password: 'MockHashForTestingOnly123456789012',
+        email: process.env.SUPERADMIN_EMAIL ?? 'superadmin@kilala.gov.ph',
+        password: process.env.SUPERADMIN_PASSWORD,
       },
     });
     const body = await res.json();
