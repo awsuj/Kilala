@@ -1,13 +1,23 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Bell } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { setCity } from "@/lib/city";
+import type { Lgu } from "@/lib/lgus";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/dashboard/records": "Records",
   "/dashboard/businesses": "Businesses",
   "/dashboard/reports": "Reports",
+  "/dashboard/accounts": "Accounts",
 };
 
 function titleFor(pathname: string): string {
@@ -19,8 +29,21 @@ function titleFor(pathname: string): string {
   return match ? TITLES[match] : "Dashboard";
 }
 
-export default function TopBar() {
+type Props = {
+  role?: string | null;
+  lgus?: Lgu[];
+  selectedCity?: string | null;
+};
+
+export default function TopBar({ role, lgus = [], selectedCity }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleCityChange = async (lguId: string | null) => {
+    if (!lguId) return;
+    await setCity(lguId);
+    router.refresh();
+  };
 
   return (
     <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-3">
@@ -29,6 +52,27 @@ export default function TopBar() {
       </h1>
 
       <div className="flex items-center gap-3">
+        {role === "SUPERADMIN" && (
+          <Select
+            value={selectedCity ?? ""}
+            onValueChange={handleCityChange}
+          >
+            <SelectTrigger
+              className="w-48"
+              aria-label="City"
+            >
+              <SelectValue placeholder="Select city" />
+            </SelectTrigger>
+            <SelectContent>
+              {lgus.map((lgu) => (
+                <SelectItem key={lgu.id} value={lgu.id}>
+                  {lgu.municipality_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         <button
           type="button"
           aria-label="Notifications"

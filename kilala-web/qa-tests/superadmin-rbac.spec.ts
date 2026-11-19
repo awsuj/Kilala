@@ -37,3 +37,19 @@ test.describe('SUPERADMIN RBAC', () => {
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   });
 });
+
+test.describe('Role-based nav + city picker', () => {
+  test('LGU_ADMIN: no Accounts link in sidebar and no city combobox in top bar', async ({ page }) => {
+    await loginWithRole(page, 'LGU_ADMIN');
+    await page.goto('/dashboard');
+    await expect(page.getByRole('link', { name: 'Accounts' })).not.toBeVisible();
+    await expect(page.getByRole('combobox', { name: /city/i })).not.toBeVisible();
+  });
+
+  test('SUPERADMIN: Accounts link visible in sidebar and city combobox visible in top bar', async ({ page }) => {
+    await loginWithRole(page, 'SUPERADMIN');
+    await page.goto('/dashboard');
+    await expect(page.getByRole('link', { name: 'Accounts' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: /city/i })).toBeVisible();
+  });
+});
