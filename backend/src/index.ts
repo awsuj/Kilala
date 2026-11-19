@@ -738,34 +738,35 @@ const getAdminContext = async (userId: string) => {
   return res.rows[0] || null;
 };
 
-// Tagged error used to signal a 400 to callers of resolveLguId
+// Tagged error used to signal a specific HTTP status to callers of resolveLguId.
+// SUPERADMIN missing/invalid lgu_id → 400; missing LGU_ADMIN profile → 404.
 class LguIdError extends Error {
   statusCode: number;
-  constructor(message: string) {
+  constructor(message: string, statusCode: number = 400) {
     super(message);
     this.name = 'LguIdError';
-    this.statusCode = 400;
+    this.statusCode = statusCode;
   }
 }
 
 // Resolves the effective lgu_id for a request.
-// For SUPERADMIN: reads ?lgu_id= query param, validates it exists in lgus, returns it (throws LguIdError → 400 if missing/invalid).
-// For all other roles: returns the caller's own city from their lgu_admins row.
+// For SUPERADMIN: reads ?lgu_id= query param (trimmed), validates it exists in lgus, returns it (throws LguIdError → 400 if missing/invalid).
+// For all other roles: returns the caller's own city from their lgu_admins row (throws LguIdError → 404 if profile not found).
 const resolveLguId = async (req: AuthRequest): Promise<string> => {
   if (req.user!.role === 'SUPERADMIN') {
-    const lguId = req.query.lgu_id as string | undefined;
-    if (!lguId || lguId.trim() === '') {
-      throw new LguIdError('lgu_id query parameter is required for SUPERADMIN requests');
+    const lguId = (req.query.lgu_id as string | undefined)?.trim();
+    if (!lguId) {
+      throw new LguIdError('lgu_id query parameter is required for SUPERADMIN requests', 400);
     }
     const check = await pool.query('SELECT 1 FROM lgus WHERE id = $1', [lguId]);
     if (check.rows.length === 0) {
-      throw new LguIdError('lgu_id does not match any known LGU');
+      throw new LguIdError('lgu_id does not match any known LGU', 400);
     }
     return lguId;
   }
   const admin = await getAdminContext(req.user!.id);
   if (!admin) {
-    throw new LguIdError('LGU Admin profile not found');
+    throw new LguIdError('LGU Admin profile not found', 404);
   }
   return admin.lgu_id;
 };
