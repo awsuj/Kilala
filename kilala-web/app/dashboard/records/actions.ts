@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { apiFetch, ApiError } from "@/lib/api";
-import { getLguIdParam } from "@/lib/city";
+import { getLguIdParam, getSelectedCity, ALL_CITIES } from "@/lib/city";
+import { getCurrentUser } from "@/lib/session";
 import { newRecordBody } from "./adapter";
 import type { NewRecordInput } from "./types";
 
@@ -19,11 +20,28 @@ export async function createCardholder(
   input: NewRecordInput,
   expiry: string | null,
 ): Promise<ActionResult> {
-  const lguParam = await getLguIdParam();
-  if (lguParam === null) {
-    return { error: "Select a city first." };
+  const user = await getCurrentUser();
+
+  if (user?.role === "SUPERADMIN") {
+    const city = await getSelectedCity();
+    if (!city || city === ALL_CITIES) {
+      return { error: "Select a city from the top bar before adding a record." };
+    }
+    // SUPERADMIN with a specific city — POST with explicit lgu_id.
+    try {
+      await apiFetch(`/api/lgu/cardholders?lgu_id=${encodeURIComponent(city)}`, {
+        method: "POST",
+        body: JSON.stringify(newRecordBody(input, expiry)),
+      });
+    } catch (e) {
+      return fail(e, "Could not add the record.");
+    }
+    revalidatePath("/dashboard/records");
+    return {};
   }
 
+  // LGU_ADMIN — city is implicit server-side.
+  const lguParam = await getLguIdParam();
   try {
     await apiFetch(`/api/lgu/cardholders${lguParam}`, {
       method: "POST",

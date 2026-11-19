@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { setCity } from "@/lib/city-actions";
+import { ALL_CITIES } from "@/lib/city-constants";
 import type { Lgu } from "@/lib/lgus";
 
 const TITLES: Record<string, string> = {
@@ -47,9 +48,10 @@ export default function TopBar({ role, lgus = [], selectedCity }: Props) {
 
   // base-ui's SelectValue renders the raw value (the LGU id) unless given an
   // items map to look up each value's label.
-  const cityItems = Object.fromEntries(
-    lgus.map((lgu) => [lgu.id, lgu.municipality_name]),
-  );
+  const cityItems = {
+    [ALL_CITIES]: "All cities",
+    ...Object.fromEntries(lgus.map((lgu) => [lgu.id, lgu.municipality_name])),
+  };
 
   return (
     <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-3">
@@ -61,16 +63,19 @@ export default function TopBar({ role, lgus = [], selectedCity }: Props) {
         {role === "SUPERADMIN" && (
           <Select
             items={cityItems}
-            value={selectedCity ?? ""}
+            value={selectedCity ?? ALL_CITIES}
             onValueChange={handleCityChange}
           >
             <SelectTrigger
               className="w-48"
               aria-label="City"
             >
-              <SelectValue placeholder="Select city" />
+              <SelectValue placeholder="All cities" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem key={ALL_CITIES} value={ALL_CITIES}>
+                All cities
+              </SelectItem>
               {lgus.map((lgu) => (
                 <SelectItem key={lgu.id} value={lgu.id}>
                   {lgu.municipality_name}

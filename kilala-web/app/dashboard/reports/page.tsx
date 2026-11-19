@@ -69,21 +69,6 @@ function formatWhen(iso: string): string {
 export default async function ReportsPage() {
   const lguParam = await getLguIdParam();
 
-  // SUPERADMIN with no city picked — prompt to select one.
-  if (lguParam === null) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Reports</CardTitle>
-          <CardDescription>
-            Select a city from the top bar to view this page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
-    );
-  }
-
   const [logsRes, discountsRes] = await Promise.allSettled([
     apiFetch<LogRow[]>(`/api/lgu/logs${lguParam}`),
     apiFetch<DiscountsResponse>(`/api/lgu/discounts${lguParam}`),

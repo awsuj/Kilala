@@ -20,21 +20,6 @@ interface DashboardAdmin {
 export default async function RecordsPage() {
   const lguParam = await getLguIdParam();
 
-  // SUPERADMIN with no city picked — prompt to select one.
-  if (lguParam === null) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Records</CardTitle>
-          <CardDescription>
-            Select a city from the top bar to view this page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
-    );
-  }
-
   const [listRes, dashRes, lgusRes] = await Promise.allSettled([
     apiFetch<BackendCardholder[]>(`/api/lgu/cardholders${lguParam}`),
     apiFetch<DashboardAdmin>(`/api/lgu/dashboard${lguParam}`),

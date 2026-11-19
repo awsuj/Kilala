@@ -65,14 +65,23 @@ test.describe('Accounts page guard', () => {
   });
 });
 
-test.describe('City picker guard — scoped pages', () => {
-  test('SUPERADMIN with no kilala_city cookie visiting /dashboard/records sees select-city prompt', async ({ page }) => {
+test.describe('All-cities default (no select-city prompt)', () => {
+  test('SUPERADMIN defaults to All cities — no select-a-city prompt on records page', async ({ page }) => {
     // Add SUPERADMIN auth cookie but deliberately omit the kilala_city cookie.
     await loginWithRole(page, 'SUPERADMIN');
     await page.goto('/dashboard/records');
-    // The "Select a city" prompt should be visible.
-    await expect(page.getByText(/select a city from the top bar/i)).toBeVisible();
-    // The records table should NOT be rendered.
-    await expect(page.getByRole('table')).not.toBeVisible();
+    // No "Select a city" prompt should appear.
+    await expect(page.getByText(/select a city/i)).toHaveCount(0);
+    // The top-bar city combobox should display "All cities" as the current value.
+    await expect(page.getByRole('combobox', { name: /city/i })).toContainText(/all cities/i);
+  });
+
+  test('SUPERADMIN city picker lists an All cities option', async ({ page }) => {
+    await loginWithRole(page, 'SUPERADMIN');
+    await page.goto('/dashboard/records');
+    // Open the city combobox.
+    await page.getByRole('combobox', { name: /city/i }).click();
+    // An "All cities" option should be present in the dropdown.
+    await expect(page.getByRole('option', { name: /all cities/i })).toBeVisible();
   });
 });

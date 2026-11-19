@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { CITY_COOKIE } from "./city";
+import { CITY_COOKIE } from "./city-constants";
 
 /**
  * Server action — sets the kilala_city cookie to the chosen LGU id.

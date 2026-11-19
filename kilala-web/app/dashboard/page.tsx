@@ -49,21 +49,6 @@ async function loadStats(lguParam: string): Promise<DashboardStats | { error: st
 export default async function DashboardPage() {
   const lguParam = await getLguIdParam();
 
-  // SUPERADMIN with no city picked — prompt to select one.
-  if (lguParam === null) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Dashboard</CardTitle>
-          <CardDescription>
-            Select a city from the top bar to view this page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
-    );
-  }
-
   const stats = await loadStats(lguParam);
 
   if ("error" in stats) {
