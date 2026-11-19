@@ -19,7 +19,7 @@ app.use(express.json());
 interface JwtPayload {
   id: string;
   email: string;
-  role: 'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS';
+  role: 'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS' | 'SUPERADMIN';
 }
 
 interface AuthRequest extends Request {
@@ -43,7 +43,7 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
   });
 };
 
-const requireRole = (allowedRoles: Array<'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS'>) => {
+const requireRole = (allowedRoles: Array<'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS' | 'SUPERADMIN'>) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
@@ -738,17 +738,51 @@ const getAdminContext = async (userId: string) => {
   return res.rows[0] || null;
 };
 
+// Tagged error used to signal a 400 to callers of resolveLguId
+class LguIdError extends Error {
+  statusCode: number;
+  constructor(message: string) {
+    super(message);
+    this.name = 'LguIdError';
+    this.statusCode = 400;
+  }
+}
+
+// Resolves the effective lgu_id for a request.
+// For SUPERADMIN: reads ?lgu_id= query param, validates it exists in lgus, returns it (throws LguIdError → 400 if missing/invalid).
+// For all other roles: returns the caller's own city from their lgu_admins row.
+const resolveLguId = async (req: AuthRequest): Promise<string> => {
+  if (req.user!.role === 'SUPERADMIN') {
+    const lguId = req.query.lgu_id as string | undefined;
+    if (!lguId || lguId.trim() === '') {
+      throw new LguIdError('lgu_id query parameter is required for SUPERADMIN requests');
+    }
+    const check = await pool.query('SELECT 1 FROM lgus WHERE id = $1', [lguId]);
+    if (check.rows.length === 0) {
+      throw new LguIdError('lgu_id does not match any known LGU');
+    }
+    return lguId;
+  }
+  const admin = await getAdminContext(req.user!.id);
+  if (!admin) {
+    throw new LguIdError('LGU Admin profile not found');
+  }
+  return admin.lgu_id;
+};
+
 // 5.1 Get LGU Admin Profile & Dashboard Summary Analytics
 app.get(
   '/api/lgu/dashboard',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) {
-        return res.status(404).json({ error: 'LGU Admin profile not found' });
-      }
+      const lgu_id = await resolveLguId(req);
+
+      // For LGU_ADMIN we also fetch the admin profile row; for SUPERADMIN it may be null.
+      const admin = req.user!.role !== 'SUPERADMIN'
+        ? await getAdminContext(req.user!.id)
+        : null;
 
       const statsQuery = await pool.query(
         `SELECT
@@ -758,12 +792,12 @@ app.get(
            COUNT(*) FILTER (WHERE status != 'ACTIVE') AS inactive_cards
          FROM cardholder_profiles
          WHERE lgu_id = $1`,
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       const bizCountQuery = await pool.query(
         'SELECT COUNT(*) AS total_businesses FROM business_profiles WHERE lgu_id = $1 AND is_accredited = TRUE',
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       const scanStatsQuery = await pool.query(
@@ -775,7 +809,7 @@ app.get(
          FROM verification_logs vl
          JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id
          WHERE cp.lgu_id = $1`,
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       res.status(200).json({
@@ -785,6 +819,9 @@ app.get(
         scanStats: scanStatsQuery.rows[0]
       });
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error fetching LGU dashboard:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -795,14 +832,13 @@ app.get(
 app.get(
   '/api/lgu/cardholders',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
 
       const { status, privilege_type, search } = req.query;
-      const params: any[] = [admin.lgu_id];
+      const params: any[] = [lgu_id];
       let query = `
         SELECT cp.*, u.email
         FROM cardholder_profiles cp
@@ -828,6 +864,9 @@ app.get(
       const result = await pool.query(query, params);
       res.status(200).json(result.rows);
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error listing cardholders:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -838,7 +877,7 @@ app.get(
 app.post(
   '/api/lgu/cardholders',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     const {
       email,
@@ -869,8 +908,9 @@ app.post(
 
     const client = await pool.connect();
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
+      const admin = req.user!.role !== 'SUPERADMIN' ? await getAdminContext(req.user!.id) : null;
+      const issuedByAdminId = admin ? admin.id : null;
 
       await client.query('BEGIN');
 
@@ -898,8 +938,8 @@ app.post(
          RETURNING *`,
         [
           newUserId,
-          admin.lgu_id,
-          admin.id,
+          lgu_id,
+          issuedByAdminId,
           lgu_id_number,
           first_name,
           middle_name || null,
@@ -922,6 +962,9 @@ app.post(
       res.status(201).json(profileRes.rows[0]);
     } catch (error: any) {
       await client.query('ROLLBACK');
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       if (error.code === '23505') {
         return res.status(409).json({ error: 'LGU ID Number or Email already exists' });
       }
@@ -937,14 +980,13 @@ app.post(
 app.patch(
   '/api/lgu/cardholders/:id',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { status, address, contact_number, expiry_date, photo_url } = req.body;
 
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
 
       const result = await pool.query(
         `UPDATE cardholder_profiles
@@ -955,7 +997,7 @@ app.patch(
              photo_url = COALESCE($5, photo_url)
          WHERE id = $6 AND lgu_id = $7
          RETURNING *`,
-        [status, address, contact_number, expiry_date, photo_url, id, admin.lgu_id]
+        [status, address, contact_number, expiry_date, photo_url, id, lgu_id]
       );
 
       if (result.rows.length === 0) {
@@ -964,6 +1006,9 @@ app.patch(
 
       res.status(200).json(result.rows[0]);
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error updating cardholder:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -974,11 +1019,10 @@ app.patch(
 app.get(
   '/api/lgu/businesses',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
 
       const result = await pool.query(
         `SELECT bp.*, u.email
@@ -986,11 +1030,14 @@ app.get(
          JOIN users u ON u.id = bp.user_id
          WHERE bp.lgu_id = $1
          ORDER BY bp.created_at DESC`,
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       res.status(200).json(result.rows);
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error fetching LGU businesses:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1001,7 +1048,7 @@ app.get(
 app.patch(
   '/api/lgu/businesses/:id/accreditation',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { is_accredited } = req.body;
@@ -1011,15 +1058,14 @@ app.patch(
     }
 
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
 
       const result = await pool.query(
         `UPDATE business_profiles
          SET is_accredited = $1
          WHERE id = $2 AND lgu_id = $3
          RETURNING *`,
-        [is_accredited, id, admin.lgu_id]
+        [is_accredited, id, lgu_id]
       );
 
       if (result.rows.length === 0) {
@@ -1028,6 +1074,9 @@ app.patch(
 
       res.status(200).json(result.rows[0]);
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error updating business accreditation:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1038,11 +1087,10 @@ app.patch(
 app.get(
   '/api/lgu/logs',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
 
       const result = await pool.query(
         `SELECT vl.id,
@@ -1062,11 +1110,14 @@ app.get(
          WHERE cp.lgu_id = $1
          ORDER BY vl.scanned_at DESC
          LIMIT 100`,
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       res.status(200).json(result.rows);
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error fetching LGU audit logs:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1077,11 +1128,10 @@ app.get(
 app.get(
   '/api/lgu/discounts',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const admin = await getAdminContext(req.user!.id);
-      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+      const lgu_id = await resolveLguId(req);
 
       // Transactions are scoped to the LGU via the cardholder's lgu_id. Note
       // transactions.business_id references users(id), so businesses join on
@@ -1094,7 +1144,7 @@ app.get(
          FROM transactions t
          JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
          WHERE cp.lgu_id = $1`,
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       const byBusinessQuery = await pool.query(
@@ -1109,7 +1159,7 @@ app.get(
          WHERE cp.lgu_id = $1
          GROUP BY bp.id, bp.business_name, bp.branch_name
          ORDER BY discounts DESC`,
-        [admin.lgu_id]
+        [lgu_id]
       );
 
       const s = summaryQuery.rows[0];
@@ -1128,6 +1178,9 @@ app.get(
         }))
       });
     } catch (error) {
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
       console.error('Error fetching LGU discounts:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1142,7 +1195,7 @@ app.get(
 app.post(
   '/api/lgu-admins',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     const { email, password, lgu_id, first_name, last_name, department, position } = req.body;
 
@@ -1209,7 +1262,7 @@ app.post(
 app.get(
   '/api/lgu-admins',
   authenticateToken,
-  requireRole(['LGU_ADMIN']),
+  requireRole(['SUPERADMIN']),
   async (_req: AuthRequest, res: Response) => {
     try {
       const result = await pool.query(

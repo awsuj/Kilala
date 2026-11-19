@@ -181,3 +181,37 @@ test.describe('POST /api/lgu-admins contracts', () => {
     expect(res.status()).toBe(409);
   });
 });
+
+test.describe('SUPERADMIN RBAC contracts', () => {
+  let token: string;
+
+  test.beforeAll(async ({ request }) => {
+    const res = await request.post(`${API_BASE_URL}/api/auth/login`, {
+      data: {
+        email: 'admin@makati.gov.ph',
+        password: 'MockHashForTestingOnly123456789012',
+      },
+    });
+    const body = await res.json();
+    expect(res.status()).toBe(200);
+    expect(body.token).toBeTruthy();
+    token = body.token;
+  });
+
+  test('GET /api/lgu-admins is forbidden for an LGU_ADMIN (now SUPERADMIN-only)', async ({ request }) => {
+    const res = await request.get(`${API_BASE_URL}/api/lgu-admins`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status()).toBe(403);
+  });
+
+  test('POST /api/lgu-admins is forbidden for an LGU_ADMIN', async ({ request }) => {
+    const res = await request.post(`${API_BASE_URL}/api/lgu-admins`, { headers: { Authorization: `Bearer ${token}` }, data: {} });
+    expect(res.status()).toBe(403);
+  });
+
+  test('LGU_ADMIN cannot override city via ?lgu_id (override ignored)', async ({ request }) => {
+    const base = await request.get(`${API_BASE_URL}/api/lgu/cardholders`, { headers: { Authorization: `Bearer ${token}` } });
+    const spoof = await request.get(`${API_BASE_URL}/api/lgu/cardholders?lgu_id=99999999-9999-9999-9999-999999999999`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(spoof.status()).toBe(200);
+    expect(await spoof.json()).toEqual(await base.json()); // same (own-city) data, not the spoofed city
+  });
+});
