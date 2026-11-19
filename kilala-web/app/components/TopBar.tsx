@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { setCity } from "@/lib/city";
+import { setCity } from "@/lib/city-actions";
 import type { Lgu } from "@/lib/lgus";
 
 const TITLES: Record<string, string> = {
