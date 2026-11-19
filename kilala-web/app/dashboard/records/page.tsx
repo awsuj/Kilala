@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from "@/lib/api";
+import { getLguIdParam } from "@/lib/city";
 import RecordsView from "./records-view";
 import { toCardRecord, type BackendCardholder } from "./adapter";
 import { getLgus, type Lgu } from "@/lib/lgus";
@@ -11,15 +12,32 @@ import {
 } from "@/components/ui/card";
 
 interface DashboardAdmin {
-  admin?: { lgu_name?: string };
+  admin?: { lgu_name?: string } | null;
 }
 
 // Live records from GET /api/lgu/cardholders. The LGU name (for the card in the
 // details sheet) comes from the dashboard endpoint's admin context.
 export default async function RecordsPage() {
+  const lguParam = await getLguIdParam();
+
+  // SUPERADMIN with no city picked — prompt to select one.
+  if (lguParam === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Records</CardTitle>
+          <CardDescription>
+            Select a city from the top bar to view this page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent />
+      </Card>
+    );
+  }
+
   const [listRes, dashRes, lgusRes] = await Promise.allSettled([
-    apiFetch<BackendCardholder[]>("/api/lgu/cardholders"),
-    apiFetch<DashboardAdmin>("/api/lgu/dashboard"),
+    apiFetch<BackendCardholder[]>(`/api/lgu/cardholders${lguParam}`),
+    apiFetch<DashboardAdmin>(`/api/lgu/dashboard${lguParam}`),
     getLgus(),
   ]);
 
@@ -41,8 +59,11 @@ export default async function RecordsPage() {
     );
   }
 
+  // admin may be null for SUPERADMIN callers — guard it.
   const lguName =
-    dashRes.status === "fulfilled" ? (dashRes.value.admin?.lgu_name ?? "") : "";
+    dashRes.status === "fulfilled"
+      ? (dashRes.value.admin?.lgu_name ?? "")
+      : "";
   const rows = listRes.value.map((r) => toCardRecord(r, lguName));
   const lgus: Lgu[] = lgusRes.status === "fulfilled" ? lgusRes.value : [];
 

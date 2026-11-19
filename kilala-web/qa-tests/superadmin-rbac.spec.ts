@@ -53,3 +53,26 @@ test.describe('Role-based nav + city picker', () => {
     await expect(page.getByRole('combobox', { name: /city/i })).toBeVisible();
   });
 });
+
+test.describe('Accounts page guard', () => {
+  test('LGU_ADMIN visiting /dashboard/accounts is redirected away from Accounts', async ({ page }) => {
+    await loginWithRole(page, 'LGU_ADMIN');
+    await page.goto('/dashboard/accounts');
+    // Should land on /dashboard (possibly /dashboard/) — not /dashboard/accounts.
+    await expect(page).not.toHaveURL(/\/dashboard\/accounts/);
+    await expect(page).toHaveURL(/\/dashboard(\/)?$/);
+    await expect(page.getByRole('heading', { name: 'Accounts' })).not.toBeVisible();
+  });
+});
+
+test.describe('City picker guard — scoped pages', () => {
+  test('SUPERADMIN with no kilala_city cookie visiting /dashboard/records sees select-city prompt', async ({ page }) => {
+    // Add SUPERADMIN auth cookie but deliberately omit the kilala_city cookie.
+    await loginWithRole(page, 'SUPERADMIN');
+    await page.goto('/dashboard/records');
+    // The "Select a city" prompt should be visible.
+    await expect(page.getByText(/select a city from the top bar/i)).toBeVisible();
+    // The records table should NOT be rendered.
+    await expect(page.getByRole('table')).not.toBeVisible();
+  });
+});

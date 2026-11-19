@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/session";
 import { getLgus, getLguAdmins, type LguAdmin } from "@/lib/lgus";
 import { ApiError } from "@/lib/api";
 import CreateAccountDialog from "./CreateAccountDialog";
@@ -19,6 +21,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export default async function AccountsPage() {
+  // Only SUPERADMIN may access this page.
+  const user = await getCurrentUser();
+  if (user?.role !== "SUPERADMIN") {
+    redirect("/dashboard");
+  }
+
   // The dialog needs the city list; the table needs the existing accounts.
   // Fetch both, but don't let a failure on one blank the whole page.
   const [lgusRes, adminsRes] = await Promise.allSettled([

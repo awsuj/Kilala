@@ -16,6 +16,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { apiFetch, ApiError } from "@/lib/api";
+import { getLguIdParam } from "@/lib/city";
 
 // Live discounts & sales — GET /api/lgu/discounts (aggregated from transactions)
 interface DiscountsResponse {
@@ -66,9 +67,26 @@ function formatWhen(iso: string): string {
 }
 
 export default async function ReportsPage() {
+  const lguParam = await getLguIdParam();
+
+  // SUPERADMIN with no city picked — prompt to select one.
+  if (lguParam === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Reports</CardTitle>
+          <CardDescription>
+            Select a city from the top bar to view this page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent />
+      </Card>
+    );
+  }
+
   const [logsRes, discountsRes] = await Promise.allSettled([
-    apiFetch<LogRow[]>("/api/lgu/logs"),
-    apiFetch<DiscountsResponse>("/api/lgu/discounts"),
+    apiFetch<LogRow[]>(`/api/lgu/logs${lguParam}`),
+    apiFetch<DiscountsResponse>(`/api/lgu/discounts${lguParam}`),
   ]);
 
   const logs = logsRes.status === "fulfilled" ? logsRes.value : [];

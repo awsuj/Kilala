@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { getCurrentUser } from "./session";
 
 export const CITY_COOKIE = "kilala_city";
 
@@ -24,4 +25,19 @@ export async function setCity(lguId: string): Promise<void> {
     secure: process.env.NODE_ENV === "production",
     path: "/",
   });
+}
+
+/**
+ * Returns the `?lgu_id=<city>` query string suffix for SUPERADMIN callers,
+ * or an empty string for LGU_ADMIN callers (their city is implicit server-side).
+ *
+ * Returns `null` when the caller is SUPERADMIN but has not selected a city yet
+ * — the caller should render a "select a city" prompt and return early.
+ */
+export async function getLguIdParam(): Promise<string | null | ""> {
+  const user = await getCurrentUser();
+  if (user?.role !== "SUPERADMIN") return "";
+  const city = await getSelectedCity();
+  if (!city) return null; // signal: no city picked
+  return `?lgu_id=${encodeURIComponent(city)}`;
 }

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { apiFetch, ApiError } from "@/lib/api";
+import { getLguIdParam } from "@/lib/city";
 import { newRecordBody } from "./adapter";
 import type { NewRecordInput } from "./types";
 
@@ -18,8 +19,13 @@ export async function createCardholder(
   input: NewRecordInput,
   expiry: string | null,
 ): Promise<ActionResult> {
+  const lguParam = await getLguIdParam();
+  if (lguParam === null) {
+    return { error: "Select a city first." };
+  }
+
   try {
-    await apiFetch("/api/lgu/cardholders", {
+    await apiFetch(`/api/lgu/cardholders${lguParam}`, {
       method: "POST",
       body: JSON.stringify(newRecordBody(input, expiry)),
     });
