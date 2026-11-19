@@ -749,26 +749,29 @@ class LguIdError extends Error {
   }
 }
 
-// Resolves the effective lgu_id for a request.
-// For SUPERADMIN: reads ?lgu_id= query param (trimmed), validates it exists in lgus, returns it (throws LguIdError → 400 if missing/invalid).
-// For all other roles: returns the caller's own city from their lgu_admins row (throws LguIdError → 404 if profile not found).
-const resolveLguId = async (req: AuthRequest): Promise<string> => {
+// Resolves the effective city filter for a request.
+// SUPERADMIN + no ?lgu_id  → { all: true,  lguId: null }   (combined across all cities)
+// SUPERADMIN + valid lgu_id → { all: false, lguId }
+// SUPERADMIN + unknown lgu_id → throws LguIdError 400
+// LGU_ADMIN (any)            → { all: false, lguId: own city } (throws LguIdError 404 if no profile)
+// SECURITY INVARIANT: { all: true } is only reachable when role === 'SUPERADMIN'.
+const resolveCityFilter = async (req: AuthRequest): Promise<{ all: boolean; lguId: string | null }> => {
   if (req.user!.role === 'SUPERADMIN') {
     const lguId = (req.query.lgu_id as string | undefined)?.trim();
     if (!lguId) {
-      throw new LguIdError('lgu_id query parameter is required for SUPERADMIN requests', 400);
+      return { all: true, lguId: null };
     }
     const check = await pool.query('SELECT 1 FROM lgus WHERE id = $1', [lguId]);
     if (check.rows.length === 0) {
       throw new LguIdError('lgu_id does not match any known LGU', 400);
     }
-    return lguId;
+    return { all: false, lguId };
   }
   const admin = await getAdminContext(req.user!.id);
   if (!admin) {
     throw new LguIdError('LGU Admin profile not found', 404);
   }
-  return admin.lgu_id;
+  return { all: false, lguId: admin.lgu_id };
 };
 
 // 5.1 Get LGU Admin Profile & Dashboard Summary Analytics
@@ -778,40 +781,63 @@ app.get(
   requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
       // For LGU_ADMIN we also fetch the admin profile row; for SUPERADMIN it may be null.
       const admin = req.user!.role !== 'SUPERADMIN'
         ? await getAdminContext(req.user!.id)
         : null;
 
-      const statsQuery = await pool.query(
-        `SELECT
-           COUNT(*) AS total_cardholders,
-           COUNT(*) FILTER (WHERE status = 'ACTIVE' AND privilege_type = 'PWD') AS active_pwd,
-           COUNT(*) FILTER (WHERE status = 'ACTIVE' AND privilege_type = 'SENIOR_CITIZEN') AS active_senior,
-           COUNT(*) FILTER (WHERE status != 'ACTIVE') AS inactive_cards
-         FROM cardholder_profiles
-         WHERE lgu_id = $1`,
-        [lgu_id]
-      );
+      const statsQuery = all
+        ? await pool.query(
+            `SELECT
+               COUNT(*) AS total_cardholders,
+               COUNT(*) FILTER (WHERE status = 'ACTIVE' AND privilege_type = 'PWD') AS active_pwd,
+               COUNT(*) FILTER (WHERE status = 'ACTIVE' AND privilege_type = 'SENIOR_CITIZEN') AS active_senior,
+               COUNT(*) FILTER (WHERE status != 'ACTIVE') AS inactive_cards
+             FROM cardholder_profiles`
+          )
+        : await pool.query(
+            `SELECT
+               COUNT(*) AS total_cardholders,
+               COUNT(*) FILTER (WHERE status = 'ACTIVE' AND privilege_type = 'PWD') AS active_pwd,
+               COUNT(*) FILTER (WHERE status = 'ACTIVE' AND privilege_type = 'SENIOR_CITIZEN') AS active_senior,
+               COUNT(*) FILTER (WHERE status != 'ACTIVE') AS inactive_cards
+             FROM cardholder_profiles
+             WHERE lgu_id = $1`,
+            [lguId]
+          );
 
-      const bizCountQuery = await pool.query(
-        'SELECT COUNT(*) AS total_businesses FROM business_profiles WHERE lgu_id = $1 AND is_accredited = TRUE',
-        [lgu_id]
-      );
+      const bizCountQuery = all
+        ? await pool.query(
+            'SELECT COUNT(*) AS total_businesses FROM business_profiles WHERE is_accredited = TRUE'
+          )
+        : await pool.query(
+            'SELECT COUNT(*) AS total_businesses FROM business_profiles WHERE lgu_id = $1 AND is_accredited = TRUE',
+            [lguId]
+          );
 
-      const scanStatsQuery = await pool.query(
-        `SELECT
-           COUNT(*) AS total_scans,
-           COUNT(*) FILTER (WHERE vl.is_valid = TRUE) AS valid_scans,
-           COUNT(*) FILTER (WHERE vl.is_valid = FALSE) AS invalid_scans,
-           COUNT(*) FILTER (WHERE vl.scanned_at >= CURRENT_DATE) AS scans_today
-         FROM verification_logs vl
-         JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id
-         WHERE cp.lgu_id = $1`,
-        [lgu_id]
-      );
+      const scanStatsQuery = all
+        ? await pool.query(
+            `SELECT
+               COUNT(*) AS total_scans,
+               COUNT(*) FILTER (WHERE vl.is_valid = TRUE) AS valid_scans,
+               COUNT(*) FILTER (WHERE vl.is_valid = FALSE) AS invalid_scans,
+               COUNT(*) FILTER (WHERE vl.scanned_at >= CURRENT_DATE) AS scans_today
+             FROM verification_logs vl
+             JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id`
+          )
+        : await pool.query(
+            `SELECT
+               COUNT(*) AS total_scans,
+               COUNT(*) FILTER (WHERE vl.is_valid = TRUE) AS valid_scans,
+               COUNT(*) FILTER (WHERE vl.is_valid = FALSE) AS invalid_scans,
+               COUNT(*) FILTER (WHERE vl.scanned_at >= CURRENT_DATE) AS scans_today
+             FROM verification_logs vl
+             JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id
+             WHERE cp.lgu_id = $1`,
+            [lguId]
+          );
 
       res.status(200).json({
         admin,
@@ -836,16 +862,21 @@ app.get(
   requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
       const { status, privilege_type, search } = req.query;
-      const params: any[] = [lgu_id];
+      const params: any[] = [];
       let query = `
         SELECT cp.*, u.email
         FROM cardholder_profiles cp
         LEFT JOIN users u ON u.id = cp.user_id
-        WHERE cp.lgu_id = $1
+        WHERE TRUE
       `;
+
+      if (!all) {
+        params.push(lguId);
+        query += ` AND cp.lgu_id = $${params.length}`;
+      }
 
       if (status) {
         params.push(status);
@@ -907,9 +938,17 @@ app.post(
       return res.status(400).json({ error: 'disability_type is required for PWD cardholders' });
     }
 
-    const client = await pool.connect();
+    let client: any = null;
     try {
-      const lgu_id = await resolveLguId(req);
+      // Resolve city filter before acquiring a client; if SUPERADMIN has no
+      // city selected, reject immediately without opening a transaction.
+      const { all, lguId } = await resolveCityFilter(req);
+      if (all) {
+        return res.status(400).json({ error: 'Select a city before creating a record' });
+      }
+      const lgu_id = lguId!;
+
+      client = await pool.connect();
       const admin = req.user!.role !== 'SUPERADMIN' ? await getAdminContext(req.user!.id) : null;
       const issuedByAdminId = admin ? admin.id : null;
 
@@ -962,7 +1001,7 @@ app.post(
       await client.query('COMMIT');
       res.status(201).json(profileRes.rows[0]);
     } catch (error: any) {
-      await client.query('ROLLBACK');
+      if (client) await client.query('ROLLBACK');
       if (error instanceof LguIdError) {
         return res.status(error.statusCode).json({ error: error.message });
       }
@@ -972,7 +1011,7 @@ app.post(
       console.error('Error creating cardholder:', error);
       res.status(500).json({ error: 'Internal server error' });
     } finally {
-      client.release();
+      if (client) client.release();
     }
   }
 );
@@ -987,19 +1026,34 @@ app.patch(
     const { status, address, contact_number, expiry_date, photo_url } = req.body;
 
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
-      const result = await pool.query(
-        `UPDATE cardholder_profiles
-         SET status = COALESCE($1, status),
-             address = COALESCE($2, address),
-             contact_number = COALESCE($3, contact_number),
-             expiry_date = COALESCE($4, expiry_date),
-             photo_url = COALESCE($5, photo_url)
-         WHERE id = $6 AND lgu_id = $7
-         RETURNING *`,
-        [status, address, contact_number, expiry_date, photo_url, id, lgu_id]
-      );
+      let result;
+      if (all) {
+        result = await pool.query(
+          `UPDATE cardholder_profiles
+           SET status = COALESCE($1, status),
+               address = COALESCE($2, address),
+               contact_number = COALESCE($3, contact_number),
+               expiry_date = COALESCE($4, expiry_date),
+               photo_url = COALESCE($5, photo_url)
+           WHERE id = $6
+           RETURNING *`,
+          [status, address, contact_number, expiry_date, photo_url, id]
+        );
+      } else {
+        result = await pool.query(
+          `UPDATE cardholder_profiles
+           SET status = COALESCE($1, status),
+               address = COALESCE($2, address),
+               contact_number = COALESCE($3, contact_number),
+               expiry_date = COALESCE($4, expiry_date),
+               photo_url = COALESCE($5, photo_url)
+           WHERE id = $6 AND lgu_id = $7
+           RETURNING *`,
+          [status, address, contact_number, expiry_date, photo_url, id, lguId]
+        );
+      }
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Cardholder not found in your LGU' });
@@ -1023,16 +1077,23 @@ app.get(
   requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
-      const result = await pool.query(
-        `SELECT bp.*, u.email
-         FROM business_profiles bp
-         JOIN users u ON u.id = bp.user_id
-         WHERE bp.lgu_id = $1
-         ORDER BY bp.created_at DESC`,
-        [lgu_id]
-      );
+      const result = all
+        ? await pool.query(
+            `SELECT bp.*, u.email
+             FROM business_profiles bp
+             JOIN users u ON u.id = bp.user_id
+             ORDER BY bp.created_at DESC`
+          )
+        : await pool.query(
+            `SELECT bp.*, u.email
+             FROM business_profiles bp
+             JOIN users u ON u.id = bp.user_id
+             WHERE bp.lgu_id = $1
+             ORDER BY bp.created_at DESC`,
+            [lguId]
+          );
 
       res.status(200).json(result.rows);
     } catch (error) {
@@ -1059,15 +1120,26 @@ app.patch(
     }
 
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
-      const result = await pool.query(
-        `UPDATE business_profiles
-         SET is_accredited = $1
-         WHERE id = $2 AND lgu_id = $3
-         RETURNING *`,
-        [is_accredited, id, lgu_id]
-      );
+      let result;
+      if (all) {
+        result = await pool.query(
+          `UPDATE business_profiles
+           SET is_accredited = $1
+           WHERE id = $2
+           RETURNING *`,
+          [is_accredited, id]
+        );
+      } else {
+        result = await pool.query(
+          `UPDATE business_profiles
+           SET is_accredited = $1
+           WHERE id = $2 AND lgu_id = $3
+           RETURNING *`,
+          [is_accredited, id, lguId]
+        );
+      }
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Business not found in your LGU' });
@@ -1091,28 +1163,47 @@ app.get(
   requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
-      const result = await pool.query(
-        `SELECT vl.id,
-                vl.status_at_scan,
-                vl.is_valid,
-                vl.failure_reason,
-                vl.scanned_at,
-                cp.first_name,
-                cp.last_name,
-                cp.lgu_id_number,
-                cp.privilege_type,
-                bp.business_name,
-                bp.branch_name
-         FROM verification_logs vl
-         JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id
-         JOIN business_profiles bp ON bp.id = vl.business_id
-         WHERE cp.lgu_id = $1
-         ORDER BY vl.scanned_at DESC
-         LIMIT 100`,
-        [lgu_id]
-      );
+      const result = all
+        ? await pool.query(
+            `SELECT vl.id,
+                    vl.status_at_scan,
+                    vl.is_valid,
+                    vl.failure_reason,
+                    vl.scanned_at,
+                    cp.first_name,
+                    cp.last_name,
+                    cp.lgu_id_number,
+                    cp.privilege_type,
+                    bp.business_name,
+                    bp.branch_name
+             FROM verification_logs vl
+             JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id
+             JOIN business_profiles bp ON bp.id = vl.business_id
+             ORDER BY vl.scanned_at DESC
+             LIMIT 100`
+          )
+        : await pool.query(
+            `SELECT vl.id,
+                    vl.status_at_scan,
+                    vl.is_valid,
+                    vl.failure_reason,
+                    vl.scanned_at,
+                    cp.first_name,
+                    cp.last_name,
+                    cp.lgu_id_number,
+                    cp.privilege_type,
+                    bp.business_name,
+                    bp.branch_name
+             FROM verification_logs vl
+             JOIN cardholder_profiles cp ON cp.id = vl.cardholder_id
+             JOIN business_profiles bp ON bp.id = vl.business_id
+             WHERE cp.lgu_id = $1
+             ORDER BY vl.scanned_at DESC
+             LIMIT 100`,
+            [lguId]
+          );
 
       res.status(200).json(result.rows);
     } catch (error) {
@@ -1132,36 +1223,58 @@ app.get(
   requireRole(['LGU_ADMIN', 'SUPERADMIN']),
   async (req: AuthRequest, res: Response) => {
     try {
-      const lgu_id = await resolveLguId(req);
+      const { all, lguId } = await resolveCityFilter(req);
 
       // Transactions are scoped to the LGU via the cardholder's lgu_id. Note
       // transactions.business_id references users(id), so businesses join on
       // business_profiles.user_id.
-      const summaryQuery = await pool.query(
-        `SELECT
-           COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounts,
-           COALESCE(SUM(t.original_amount), 0) AS total_sales,
-           COUNT(*) AS discounted_txns
-         FROM transactions t
-         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
-         WHERE cp.lgu_id = $1`,
-        [lgu_id]
-      );
+      const summaryQuery = all
+        ? await pool.query(
+            `SELECT
+               COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounts,
+               COALESCE(SUM(t.original_amount), 0) AS total_sales,
+               COUNT(*) AS discounted_txns
+             FROM transactions t
+             JOIN cardholder_profiles cp ON cp.id = t.cardholder_id`
+          )
+        : await pool.query(
+            `SELECT
+               COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounts,
+               COALESCE(SUM(t.original_amount), 0) AS total_sales,
+               COUNT(*) AS discounted_txns
+             FROM transactions t
+             JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+             WHERE cp.lgu_id = $1`,
+            [lguId]
+          );
 
-      const byBusinessQuery = await pool.query(
-        `SELECT bp.business_name,
-                bp.branch_name,
-                COUNT(t.id) AS txns,
-                COALESCE(SUM(t.original_amount), 0) AS sales,
-                COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS discounts
-         FROM transactions t
-         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
-         JOIN business_profiles bp ON bp.user_id = t.business_id
-         WHERE cp.lgu_id = $1
-         GROUP BY bp.id, bp.business_name, bp.branch_name
-         ORDER BY discounts DESC`,
-        [lgu_id]
-      );
+      const byBusinessQuery = all
+        ? await pool.query(
+            `SELECT bp.business_name,
+                    bp.branch_name,
+                    COUNT(t.id) AS txns,
+                    COALESCE(SUM(t.original_amount), 0) AS sales,
+                    COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS discounts
+             FROM transactions t
+             JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+             JOIN business_profiles bp ON bp.user_id = t.business_id
+             GROUP BY bp.id, bp.business_name, bp.branch_name
+             ORDER BY discounts DESC`
+          )
+        : await pool.query(
+            `SELECT bp.business_name,
+                    bp.branch_name,
+                    COUNT(t.id) AS txns,
+                    COALESCE(SUM(t.original_amount), 0) AS sales,
+                    COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS discounts
+             FROM transactions t
+             JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+             JOIN business_profiles bp ON bp.user_id = t.business_id
+             WHERE cp.lgu_id = $1
+             GROUP BY bp.id, bp.business_name, bp.branch_name
+             ORDER BY discounts DESC`,
+            [lguId]
+          );
 
       const s = summaryQuery.rows[0];
       res.status(200).json({
