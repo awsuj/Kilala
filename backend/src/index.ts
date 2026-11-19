@@ -1135,6 +1135,77 @@ app.get(
 );
 
 // ============================================================================
+// 6. LGU ADMIN MANAGEMENT ROUTES
+// ============================================================================
+
+// 6.1 Create a New LGU Admin Account
+app.post(
+  '/api/lgu-admins',
+  authenticateToken,
+  requireRole(['LGU_ADMIN']),
+  async (req: AuthRequest, res: Response) => {
+    const { email, password, lgu_id, first_name, last_name, department, position } = req.body;
+
+    if (!email || !password || !lgu_id || !first_name || !last_name || !department) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Verify lgu_id exists before opening a transaction so no user row is created for a bad lgu_id
+    const lguCheck = await pool.query('SELECT 1 FROM lgus WHERE id = $1', [lgu_id]);
+    if (lguCheck.rows.length === 0) {
+      return res.status(400).json({ error: 'LGU not found' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const userRes = await client.query(
+        `INSERT INTO users (email, password_hash, role)
+         VALUES ($1, $2, 'LGU_ADMIN')
+         RETURNING id, email`,
+        [email, passwordHash]
+      );
+
+      const newUser = userRes.rows[0];
+
+      const adminRes = await client.query(
+        `INSERT INTO lgu_admins (user_id, lgu_id, first_name, last_name, department, position)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [newUser.id, lgu_id, first_name, last_name, department, position || null]
+      );
+
+      await client.query('COMMIT');
+
+      const admin = adminRes.rows[0];
+      res.status(201).json({
+        message: 'LGU admin created successfully',
+        admin: {
+          id: admin.id,
+          email: newUser.email,
+          lgu_id: admin.lgu_id,
+          first_name: admin.first_name,
+          last_name: admin.last_name,
+          department: admin.department,
+          position: admin.position,
+        },
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'An account with this email already exists' });
+      }
+      console.error('LGU admin creation error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ============================================================================
 // SERVER INITIALIZATION
 // ============================================================================
 
