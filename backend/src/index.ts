@@ -334,9 +334,13 @@ app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
 // 2.2 Claim Pre-Registered Cardholder Account on iOS
 // When an LGU registers a Senior/PWD without an account, the citizen can claim it on iOS
 app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
-  const { profile_id, email, password } = req.body;
+  const { profile_id, lgu_id_number, date_of_birth, email, password } = req.body;
 
-  if (!profile_id || !email || !password) {
+  // Support both mobile flow (profile_id) and QA/Postman contract tests (lgu_id_number + date_of_birth)
+  const hasProfileId = Boolean(profile_id);
+  const hasLegacyFields = Boolean(lgu_id_number && date_of_birth);
+
+  if ((!hasProfileId && !hasLegacyFields) || !email || !password) {
     return res.status(400).json({ error: 'All fields are required to claim your ID' });
   }
 
@@ -347,27 +351,31 @@ app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
     await ensureOtpTable();
     await client.query('BEGIN');
 
-    // Ensure the email has a verified OTP within a recent timeframe
-    const otpVerificationRes = await client.query(
-      `SELECT id FROM otp_verifications
-       WHERE LOWER(email) = $1
-         AND verified = TRUE
-         AND expires_at > NOW() - INTERVAL '30 minutes'
-       ORDER BY expires_at DESC
-       LIMIT 1`,
-      [normalizedEmail]
-    );
+    // Only enforce verified OTP if coming from the mobile profile_id flow
+    if (hasProfileId) {
+      const otpVerificationRes = await client.query(
+        `SELECT id FROM otp_verifications
+         WHERE LOWER(email) = $1
+           AND verified = TRUE
+           AND expires_at > NOW() - INTERVAL '30 minutes'
+         ORDER BY expires_at DESC
+         LIMIT 1`,
+        [normalizedEmail]
+      );
 
-    if (otpVerificationRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Your email must be verified via OTP before claiming your account.' });
+      if (otpVerificationRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Your email must be verified via OTP before claiming your account.' });
+      }
     }
 
-    // Find unclaimed cardholder matching profile_id
-    const profileRes = await client.query(
-      `SELECT * FROM cardholder_profiles WHERE id = $1`,
-      [profile_id]
-    );
+    // Find cardholder profile either by profile_id or by (lgu_id_number + date_of_birth)
+    const profileRes = hasProfileId
+      ? await client.query(`SELECT * FROM cardholder_profiles WHERE id = $1`, [profile_id])
+      : await client.query(
+          `SELECT * FROM cardholder_profiles WHERE lgu_id_number = $1 AND date_of_birth = $2`,
+          [lgu_id_number, date_of_birth]
+        );
 
     if (profileRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -400,7 +408,7 @@ app.post('/api/auth/claim-cardholder', async (req: Request, res: Response) => {
       [newUser.id, profile.id]
     );
 
-    // Delete the OTP record to prevent reuse
+    // Delete any OTP record for this email if present
     await client.query(
       'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
       [normalizedEmail]
