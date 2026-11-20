@@ -41,11 +41,14 @@ final class BusinessAppUITests: XCTestCase {
     // MARK: 1. Login and registration
 
     /// BUS-01 · Business User Logs In to the Merchant Scanner and Logs Out – Positive
+    /// Since PR #35 the business lands on the Business Dashboard and the Merchant Scanner is
+    /// the drawer at its bottom, so the test opens the drawer to reach the scanner.
     @MainActor
     func testBUS01_BusinessLogsInToScannerAndLogsOut() throws {
         try requireBackend()
         let app = openMerchantScanner()
-        attachScreenshot(app, named: "BUS-01 Merchant Scanner")
+        XCTAssertTrue(app.textFields[UIText.qrDebugInput].exists, "The scanner should be ready for a QR code")
+        attachScreenshot(app, named: "BUS-01 Business Dashboard with scanner open")
         logOut(app)
     }
 
@@ -97,7 +100,7 @@ final class BusinessAppUITests: XCTestCase {
         dismissSavePasswordPromptIfShown(app)
 
         XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 15),
-                      "A newly registered business should be signed in to the Merchant Scanner")
+                      "A newly registered business should be signed in to the Business Dashboard")
         attachScreenshot(app, named: "BUS-03 Registered business")
     }
 
@@ -135,9 +138,9 @@ final class BusinessAppUITests: XCTestCase {
         attachScreenshot(app, named: "BUS-05 Unrecognized QR")
 
         app.buttons[UIText.dismissInvalid].tap()
-        XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 5),
-                      "Dismissing should return to the Merchant Scanner")
-        XCTAssertFalse(app.navigationBars[UIText.verificationResult].exists)
+        XCTAssertTrue(app.navigationBars[UIText.verificationResult].waitForNonExistence(timeout: 5),
+                      "Dismissing should close the result")
+        XCTAssertTrue(app.textFields[UIText.qrDebugInput].exists, "Dismissing should return to the scanner")
     }
 
     /// BUS-06 · Revoked Card Is Not Accepted – Negative
@@ -278,10 +281,13 @@ final class BusinessAppUITests: XCTestCase {
         let message = "Successfully recorded bill of ₱1234.50 with a 20% discount (Final: ₱987.60)."
         XCTAssertTrue(alert.staticTexts[message].exists, "Unexpected confirmation message")
 
-        // Step 2.
+        // Step 2. Since PR #35 the history is opened from the dashboard's History button,
+        // so the scanner drawer is closed first.
         alert.buttons["OK"].tap()
-        let historyLink = app.buttons[UIText.viewHistory]
-        XCTAssertTrue(historyLink.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars[UIText.verificationResult].waitForNonExistence(timeout: 5))
+        closeScannerDrawer(app)
+        let historyLink = app.navigationBars[UIText.businessHome].buttons[UIText.historyButton]
+        XCTAssertTrue(historyLink.waitForExistence(timeout: 5), "History button missing")
         historyLink.tap()
         XCTAssertTrue(app.navigationBars[UIText.transactionHistory].waitForExistence(timeout: 10))
 

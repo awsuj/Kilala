@@ -72,11 +72,11 @@ final class KilalaUITestsLaunchTests: XCTestCase {
         try requireBackend()
         let app = launchApp()
 
-        // Log into the seeded business test account.
+        // Log into the seeded business test account (lands on the Business Dashboard since PR #35).
         logIn(app, email: UITestAccounts.business, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
         XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 15))
 
-        attachScreenshot(app, named: "Merchant Scanner")
+        attachScreenshot(app, named: "Business Dashboard")
     }
 }
