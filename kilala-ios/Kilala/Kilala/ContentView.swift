@@ -19,8 +19,9 @@ struct ContentView: View {
                     self.session = nil
                 }
             case .business:
-                QRScannerView(token: session.token) {
+                BusinessDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
+                    APIService.shared.currentBusinessProfile = nil
                     self.session = nil
                 }
             case .lguAdmin:

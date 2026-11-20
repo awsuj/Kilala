@@ -13,7 +13,7 @@ import Testing
 /// flows depend on. Runs offline inside the Kilala test host.
 ///
 /// The other Sprint 1 suites live next to this file:
-/// - ModelContractTests        (S1-API)  agreed JSON ↔ Codable models
+/// - ModelContractTests        (S1-MOD)  agreed JSON ↔ Codable models
 /// - SchemaContractTests       (S1-SCH)  app enums ↔ backend/src/schema/schema.sql
 /// - APIServiceAuthTests       (S1-JWT)  APIService against a stubbed backend
 /// - LiveBackendContractTests  (S1-LIVE) APIService against the real backend

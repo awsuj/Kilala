@@ -9,8 +9,11 @@ import SwiftUI
 import AVFoundation
 
 struct QRScannerView: View {
-    let token: String
+    var token: String = APIService.shared.authToken ?? ""
     var onLogout: (() -> Void)? = nil
+    var isEmbeddedInDrawer: Bool = false
+    var isScannerVisible: Bool = true
+    var onTransactionRecorded: (() -> Void)? = nil
     
     @State private var scanResult: VerificationResponse? = nil
     @State private var isVerifying = false
@@ -21,76 +24,115 @@ struct QRScannerView: View {
     #endif
     
     private var isScannerActive: Bool {
-        !isVerifying && scanResult == nil
+        isScannerVisible && !isVerifying && scanResult == nil
     }
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Camera Feed Background
-                QRCameraScannerRepresentable(isScanning: isScannerActive) { scannedToken in
-                    verifyQRToken(scannedToken)
-                }
-                .ignoresSafeArea()
-                
-                // Darkened Scanner Overlay & Reticle
-                VStack(spacing: 24) {
-                    VStack(spacing: 6) {
-                        Text("Scan Kilala Digital ID")
-                            .font(.title3.bold())
-                            .foregroundColor(.white)
-                        
-                        Text("Align the cardholder's QR code within the frame")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(12)
-                    .padding(.top, 16)
-                    
-                    Spacer()
-                    
-                    // Scanner Reticle Frame
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 24)
-                            .strokeBorder(
-                                isVerifying ? Color.yellow : Color.white,
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [30, 15])
-                            )
-                            .frame(width: 260, height: 260)
-                            .background(Color.black.opacity(0.15).cornerRadius(24))
-                        
-                        if isVerifying {
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(1.3)
-                                Text("Verifying ID...")
-                                    .font(.callout.weight(.semibold))
-                                    .foregroundColor(.white)
+        Group {
+            if isEmbeddedInDrawer {
+                scannerContent
+            } else {
+                NavigationStack {
+                    scannerContent
+                        .navigationTitle("Merchant Scanner")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                NavigationLink(destination: BusinessTransactionHistoryView()) {
+                                    Label("History", systemImage: "clock.arrow.circlepath")
+                                }
                             }
-                            .padding(20)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(16)
+                            if let onLogout = onLogout {
+                                ToolbarItem(placement: .navigationBarTrailing) {
+                                    Button("Logout", action: onLogout)
+                                }
+                            }
                         }
+                }
+            }
+        }
+        .onAppear {
+            if !token.isEmpty {
+                APIService.shared.authToken = token
+            }
+        }
+        .sheet(item: $scanResult) { result in
+            ScanResultSheet(result: result) {
+                scanResult = nil
+                onTransactionRecorded?()
+            }
+            .presentationDetents([.large, .medium])
+            .presentationDragIndicator(.visible)
+        }
+    }
+    
+    private var scannerContent: some View {
+        ZStack {
+            // Camera Feed Background
+            QRCameraScannerRepresentable(isScanning: isScannerActive) { scannedToken in
+                verifyQRToken(scannedToken)
+            }
+            .ignoresSafeArea()
+            
+            // Darkened Scanner Overlay & Reticle
+            VStack(spacing: 20) {
+                VStack(spacing: 6) {
+                    Text("Scan Kilala Digital ID")
+                        .font(.title3.bold())
+                        .foregroundColor(.white)
+                    
+                    Text("Align the cardholder's QR code within the frame")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
+                .cornerRadius(12)
+                .padding(.top, 12)
+                
+                Spacer()
+                
+                // Scanner Reticle Frame
+                ZStack {
+                    RoundedRectangle(cornerRadius: 24)
+                        .strokeBorder(
+                            isVerifying ? Color.yellow : Color.white,
+                            style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [30, 15])
+                        )
+                        .frame(width: 240, height: 240)
+                        .background(Color.black.opacity(0.15).cornerRadius(24))
+                    
+                    if isVerifying {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.3)
+                            Text("Verifying ID...")
+                                .font(.callout.weight(.semibold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(20)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16)
                     }
-                    
-                    if let errorMessage = errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.red.opacity(0.9))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
-                    }
-                    
-                    Spacer()
-                    
+                }
+                
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.red.opacity(0.9))
+                        .cornerRadius(10)
+                        .padding(.horizontal)
+                }
+                
+                Spacer()
+                
+                if !isEmbeddedInDrawer {
                     NavigationLink(destination: BusinessTransactionHistoryView()) {
                         HStack(spacing: 8) {
                             Image(systemName: "clock.arrow.circlepath")
@@ -105,68 +147,44 @@ struct QRScannerView: View {
                         .cornerRadius(12)
                     }
                     .padding(.bottom, 8)
+                }
+                
+                #if targetEnvironment(simulator)
+                // Simulator Fallback for testing without a physical camera
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Simulator Debug Input", systemImage: "hammer.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.secondary)
                     
-                    #if targetEnvironment(simulator)
-                    // Simulator Fallback for testing without a physical camera
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("Simulator Debug Input", systemImage: "hammer.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundColor(.secondary)
+                    HStack(spacing: 10) {
+                        TextField("Paste QR token (e.g. KILALA-QR-...)", text: $manualQRToken)
+                            .textFieldStyle(.roundedBorder)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.system(.subheadline, design: .monospaced))
                         
-                        HStack(spacing: 10) {
-                            TextField("Paste QR token (e.g. KILALA-QR-...)", text: $manualQRToken)
-                                .textFieldStyle(.roundedBorder)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .font(.system(.subheadline, design: .monospaced))
-                            
-                            Button {
-                                let trimmed = manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !trimmed.isEmpty else { return }
-                                verifyQRToken(trimmed)
-                            } label: {
-                                Text("Verify")
-                                    .fontWeight(.semibold)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(Color.blue)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(8)
-                            }
-                            .disabled(isVerifying || manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button {
+                            let trimmed = manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return }
+                            verifyQRToken(trimmed)
+                        } label: {
+                            Text("Verify")
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
                         }
-                    }
-                    .padding()
-                    .background(.regularMaterial)
-                    .cornerRadius(16)
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
-                    #endif
-                }
-            }
-            .navigationTitle("Merchant Scanner")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    NavigationLink(destination: BusinessTransactionHistoryView()) {
-                        Label("History", systemImage: "clock.arrow.circlepath")
+                        .disabled(isVerifying || manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                if let onLogout = onLogout {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Logout", action: onLogout)
-                    }
-                }
-            }
-            .onAppear {
-                APIService.shared.authToken = token
-            }
-            .sheet(item: $scanResult) { result in
-                ScanResultSheet(result: result) {
-                    scanResult = nil
-                }
-                .presentationDetents([.large, .medium])
-                .presentationDragIndicator(.visible)
+                .padding()
+                .background(.regularMaterial)
+                .cornerRadius(16)
+                .padding(.horizontal)
+                .padding(.bottom, 16)
+                #endif
             }
         }
     }

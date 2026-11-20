@@ -46,6 +46,7 @@ interface JwtPayload {
   id: string;
   email: string;
   role: 'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS';
+  business_id?: string;
 }
 
 interface AuthRequest extends Request {
@@ -467,7 +468,7 @@ app.post('/api/auth/register-business', async (req: Request, res: Response) => {
          user_id, lgu_id, business_name, branch_name, category,
          business_permit_no, tin_number, address
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
+       RETURNING *, (SELECT municipality_name FROM lgus WHERE id = $2) AS lgu_name`,
       [
         newUser.id,
         lgu_id,
@@ -610,19 +611,135 @@ app.get(
 // ============================================================================
 
 // 4.1 Get Logged-in Business Profile
+const handleGetBusinessProfile = async (req: AuthRequest, res: Response) => {
+  const businessId = req.user?.business_id || req.user!.id;
+  try {
+    const result = await pool.query(
+      `SELECT bp.*, l.municipality_name AS lgu_name
+       FROM business_profiles bp
+       JOIN lgus l ON l.id = bp.lgu_id
+       WHERE bp.user_id = $1 OR bp.id = $1`,
+      [businessId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business profile not found' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching business profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 app.get(
   '/api/business/me',
   authenticateToken,
   requireRole(['BUSINESS']),
+  handleGetBusinessProfile
+);
+
+app.get(
+  '/api/business/profile',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  handleGetBusinessProfile
+);
+
+// 4.1.1 Update Logged-in Business Profile (Editable Fields Only)
+app.put(
+  '/api/business/profile',
+  authenticateToken,
+  requireRole(['BUSINESS']),
   async (req: AuthRequest, res: Response) => {
+    // Extract business identifier securely from the merchant's verified JWT
+    const businessId = req.user?.business_id || req.user!.id;
+
+    // Strictly whitelist editable fields; silently ignore business_name, permit_number,
+    // business_permit_no, tin, tin_number, lgu_id, issuing_lgu, or any other legal identifiers.
+    const rawBranchName =
+      req.body.branch_name !== undefined ? req.body.branch_name : req.body.branchName;
+    const rawCategory = req.body.category;
+    const rawAddress = req.body.address;
+
+    const branchNameValue =
+      rawBranchName === undefined
+        ? undefined
+        : typeof rawBranchName === 'string'
+        ? rawBranchName.trim() || null
+        : null;
+    const categoryValue =
+      typeof rawCategory === 'string' && rawCategory.trim() !== ''
+        ? rawCategory.trim().toUpperCase()
+        : undefined;
+    const addressValue =
+      typeof rawAddress === 'string' && rawAddress.trim() !== ''
+        ? rawAddress.trim()
+        : undefined;
+
+    if (rawCategory !== undefined && !categoryValue) {
+      return res.status(400).json({ error: 'Category cannot be empty' });
+    }
+
+    if (rawAddress !== undefined && !addressValue) {
+      return res.status(400).json({ error: 'Address cannot be empty' });
+    }
+
+    const updateSql = `
+      UPDATE business_profiles bp
+      SET branch_name = CASE WHEN $1::boolean THEN $2 ELSE bp.branch_name END,
+          category = COALESCE($3::business_category, bp.category),
+          address = COALESCE($4, bp.address),
+          updated_at = CURRENT_TIMESTAMP
+      FROM lgus l
+      WHERE (bp.user_id = $5 OR bp.id = $5)
+        AND l.id = bp.lgu_id
+      RETURNING bp.*, l.municipality_name AS lgu_name
+    `;
+
     try {
-      const result = await pool.query(
-        `SELECT bp.*, l.municipality_name AS lgu_name
-         FROM business_profiles bp
-         JOIN lgus l ON l.id = bp.lgu_id
-         WHERE bp.user_id = $1`,
-        [req.user!.id]
-      );
+      let result;
+      try {
+        result = await pool.query(updateSql, [
+          branchNameValue !== undefined,
+          branchNameValue ?? null,
+          categoryValue ?? null,
+          addressValue ?? null,
+          businessId
+        ]);
+      } catch (err: any) {
+        // If the user entered a custom category string not yet in the business_category enum
+        if (err.code === '22P02' && categoryValue) {
+          const safeEnumVal = categoryValue.replace(/[^A-Z0-9_ ]/g, '').trim();
+          if (safeEnumVal) {
+            try {
+              await pool.query(
+                `ALTER TYPE business_category ADD VALUE IF NOT EXISTS '${safeEnumVal}'`
+              );
+              result = await pool.query(updateSql, [
+                branchNameValue !== undefined,
+                branchNameValue ?? null,
+                safeEnumVal,
+                addressValue ?? null,
+                businessId
+              ]);
+            } catch {
+              result = await pool.query(updateSql, [
+                branchNameValue !== undefined,
+                branchNameValue ?? null,
+                'OTHER',
+                addressValue ?? null,
+                businessId
+              ]);
+            }
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Business profile not found' });
@@ -630,7 +747,7 @@ app.get(
 
       res.status(200).json(result.rows[0]);
     } catch (error) {
-      console.error('Error fetching business profile:', error);
+      console.error('Error updating business profile:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -832,16 +949,28 @@ app.post(
   }
 );
 
-// 4.5 Get Business Transaction History
-app.get(
-  '/api/transactions/business',
-  authenticateToken,
-  requireRole(['BUSINESS']),
-  async (req: AuthRequest, res: Response) => {
-    const businessId = req.user!.id;
+// 4.5 Get Business Transaction History & Dashboard Analytics Summary
+const handleBusinessTransactions = async (
+  req: AuthRequest,
+  res: Response,
+  forceSummary = false
+) => {
+  const businessId = req.user!.id;
+  const rawRange =
+    typeof req.query.range === 'string' ? req.query.range.trim().toLowerCase() : undefined;
 
-    try {
-      const result = await pool.query(
+  let intervalFilter = '';
+  if (rawRange === '24h') {
+    intervalFilter = "AND t.created_at >= NOW() - INTERVAL '24 hours'";
+  } else if (rawRange === 'week') {
+    intervalFilter = "AND t.created_at >= NOW() - INTERVAL '7 days'";
+  } else if (rawRange === 'month') {
+    intervalFilter = "AND t.created_at >= NOW() - INTERVAL '1 month'";
+  }
+
+  try {
+    const [listResult, summaryResult] = await Promise.all([
+      pool.query(
         `SELECT t.id,
                 t.business_id,
                 t.cardholder_id,
@@ -856,33 +985,70 @@ app.get(
          FROM transactions t
          JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
          WHERE t.business_id = $1
+           ${intervalFilter}
          ORDER BY t.created_at DESC`,
         [businessId]
-      );
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(t.discounted_amount), 0) AS total_discounted_amount,
+                COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounted_sales,
+                COALESCE(SUM(t.original_amount), 0) AS total_original_amount,
+                COUNT(t.id) AS transaction_count
+         FROM transactions t
+         WHERE t.business_id = $1
+           ${intervalFilter}`,
+        [businessId]
+      )
+    ]);
 
-      const transactions = result.rows.map((row) => ({
-        id: row.id,
-        business_id: row.business_id,
-        cardholder_id: row.cardholder_id,
-        cardholder_name: [row.first_name, row.middle_name, row.last_name]
-          .filter(Boolean)
-          .join(' '),
-        first_name: row.first_name,
-        middle_name: row.middle_name,
-        last_name: row.last_name,
-        lgu_id_number: row.lgu_id_number,
-        privilege_type: row.privilege_type,
-        original_amount: Number(row.original_amount),
-        discounted_amount: Number(row.discounted_amount),
-        created_at: row.created_at
-      }));
+    const transactions = listResult.rows.map((row) => ({
+      id: row.id,
+      business_id: row.business_id,
+      cardholder_id: row.cardholder_id,
+      cardholder_name: [row.first_name, row.middle_name, row.last_name]
+        .filter(Boolean)
+        .join(' '),
+      first_name: row.first_name,
+      middle_name: row.middle_name,
+      last_name: row.last_name,
+      lgu_id_number: row.lgu_id_number,
+      privilege_type: row.privilege_type,
+      original_amount: Number(row.original_amount),
+      discounted_amount: Number(row.discounted_amount),
+      created_at: row.created_at
+    }));
 
-      res.status(200).json(transactions);
-    } catch (error) {
-      console.error('Error fetching business transactions:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    if (rawRange || forceSummary) {
+      const summaryRow = summaryResult.rows[0] || {};
+      return res.status(200).json({
+        range: rawRange || 'all',
+        total_discounted_amount: Number(summaryRow.total_discounted_amount || 0),
+        total_discounted_sales: Number(summaryRow.total_discounted_sales || 0),
+        total_original_amount: Number(summaryRow.total_original_amount || 0),
+        transaction_count: Number(summaryRow.transaction_count || 0),
+        transactions
+      });
     }
+
+    return res.status(200).json(transactions);
+  } catch (error) {
+    console.error('Error fetching business transactions:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
+};
+
+app.get(
+  '/api/transactions/business',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  (req: AuthRequest, res: Response) => handleBusinessTransactions(req, res, false)
+);
+
+app.get(
+  '/api/transactions/business/summary',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  (req: AuthRequest, res: Response) => handleBusinessTransactions(req, res, true)
 );
 
 
@@ -1232,6 +1398,67 @@ app.get(
       res.status(200).json(result.rows);
     } catch (error) {
       console.error('Error fetching LGU audit logs:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// 5.8 LGU Discounts & Sales Report (aggregated from the transactions table)
+app.get(
+  '/api/lgu/discounts',
+  authenticateToken,
+  requireRole(['LGU_ADMIN']),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = await getAdminContext(req.user!.id);
+      if (!admin) return res.status(404).json({ error: 'LGU Admin not found' });
+
+      // Transactions are scoped to the LGU via the cardholder's lgu_id. Note
+      // transactions.business_id references users(id), so businesses join on
+      // business_profiles.user_id.
+      const summaryQuery = await pool.query(
+        `SELECT
+           COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS total_discounts,
+           COALESCE(SUM(t.original_amount), 0) AS total_sales,
+           COUNT(*) AS discounted_txns
+         FROM transactions t
+         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+         WHERE cp.lgu_id = $1`,
+        [admin.lgu_id]
+      );
+
+      const byBusinessQuery = await pool.query(
+        `SELECT bp.business_name,
+                bp.branch_name,
+                COUNT(t.id) AS txns,
+                COALESCE(SUM(t.original_amount), 0) AS sales,
+                COALESCE(SUM(t.original_amount - t.discounted_amount), 0) AS discounts
+         FROM transactions t
+         JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+         JOIN business_profiles bp ON bp.user_id = t.business_id
+         WHERE cp.lgu_id = $1
+         GROUP BY bp.id, bp.business_name, bp.branch_name
+         ORDER BY discounts DESC`,
+        [admin.lgu_id]
+      );
+
+      const s = summaryQuery.rows[0];
+      res.status(200).json({
+        summary: {
+          totalDiscounts: Number(s.total_discounts),
+          totalSales: Number(s.total_sales),
+          discountedTxns: Number(s.discounted_txns)
+        },
+        byBusiness: byBusinessQuery.rows.map((r) => ({
+          business_name: r.business_name,
+          branch_name: r.branch_name,
+          txns: Number(r.txns),
+          sales: Number(r.sales),
+          discounts: Number(r.discounts)
+        }))
+      });
+    } catch (error) {
+      console.error('Error fetching LGU discounts:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
