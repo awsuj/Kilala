@@ -535,47 +535,28 @@ app.put(
     `;
 
     try {
-      let result;
-      try {
-        result = await pool.query(updateSql, [
-          branchNameValue !== undefined,
-          branchNameValue ?? null,
-          categoryValue ?? null,
-          addressValue ?? null,
-          businessId
-        ]);
-      } catch (err: any) {
-        // If the user entered a custom category string not yet in the business_category enum
-        if (err.code === '22P02' && categoryValue) {
-          const safeEnumVal = categoryValue.replace(/[^A-Z0-9_ ]/g, '').trim();
-          if (safeEnumVal) {
-            try {
-              await pool.query(
-                `ALTER TYPE business_category ADD VALUE IF NOT EXISTS '${safeEnumVal}'`
-              );
-              result = await pool.query(updateSql, [
-                branchNameValue !== undefined,
-                branchNameValue ?? null,
-                safeEnumVal,
-                addressValue ?? null,
-                businessId
-              ]);
-            } catch {
-              result = await pool.query(updateSql, [
-                branchNameValue !== undefined,
-                branchNameValue ?? null,
-                'OTHER',
-                addressValue ?? null,
-                businessId
-              ]);
-            }
-          } else {
-            throw err;
-          }
-        } else {
-          throw err;
+      // Only categories defined in the business_category enum (schema.sql) are accepted.
+      // A user request must never change the database schema, so unknown values are
+      // rejected instead of being added to the enum.
+      if (categoryValue) {
+        const allowed = await pool.query(
+          'SELECT unnest(enum_range(NULL::business_category))::text AS value'
+        );
+        const allowedCategories: string[] = allowed.rows.map((row: { value: string }) => row.value);
+        if (!allowedCategories.includes(categoryValue)) {
+          return res.status(400).json({
+            error: `Invalid category. Choose one of: ${allowedCategories.join(', ')}`
+          });
         }
       }
+
+      const result = await pool.query(updateSql, [
+        branchNameValue !== undefined,
+        branchNameValue ?? null,
+        categoryValue ?? null,
+        addressValue ?? null,
+        businessId
+      ]);
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Business profile not found' });
