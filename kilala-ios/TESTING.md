@@ -35,7 +35,7 @@ Each Sprint 1 goal from the masterfile is mapped to what the iOS app can actuall
 |---|---|---|
 | **Database Schema** | The app's user roles and sign-up ID types match the enums in `backend/src/schema/schema.sql`. Business categories and card statuses are checked against a copy of the agreed list kept in the test, because the app's own category list is private (see the note under SCH-03). | SCH-01 – SCH-04 |
 | **PostgreSQL deployment** | The backend serves real rows from the database (seeded Makati LGU, seeded accounts). DB-01 only confirms the API process is up; it doesn't query the database. | DB-02, LIVE-01 (DB-01 supporting) |
-| **CI/CD Schema** | Not testable from the app. All tests run headless with one `xcodebuild` command (§5.3), ready for an iOS CI job. See finding F-07. | – |
+| **CI/CD Schema** | Not testable from the app itself. The whole suite runs automatically in GitHub Actions on every PR to `dev` that changes the iOS app or the backend (§5.3). | – |
 | **JWT Auth API** | The token is stored after login, sent as `Bearer`, has the agreed claims and 24-hour expiry, and is refused when missing, forged or used by the wrong role. | AUTH-01 – AUTH-06, JWT-01 – JWT-05, CH-04 |
 | **Login/Signup UI** | Login, button states, error message, role-based landing screens, logout and relaunch, cardholder and business sign-up and their validation. | CH-01 – CH-07, BUS-01 – BUS-03, launch screenshots |
 | *Digital ID, QR verification, discounts and transactions (Sprint 2–4 features in the MCO4 plan)* | The Digital ID shows the card's details and status; businesses verify active, unknown, revoked and expired cards; inactive accreditation is refused; the 20% discount is calculated; transactions are recorded and listed. | CH-08, BUS-04 – BUS-11 |
@@ -369,9 +369,19 @@ xcrun xcresulttool get test-results summary --path build/sprint1.xcresult   # pa
 open build/sprint1.xcresult                                                  # full report in Xcode
 ```
 
-### 5.3 For a future CI job
+### 5.3 In CI (GitHub Actions)
 
-The suite needs no manual steps. A macOS runner with Xcode 26+ can run the unit tests with the "unit tests only" command above. Without a backend, the live suites skip themselves. To run them in CI too, start PostgreSQL and the backend first (§4.2). See finding F-07.
+`.github/workflows/ios-tests.yml` runs the **whole suite automatically** – unit and UI tests, write tests on – on every pull request to `dev` (and every push to `dev`) that changes `kilala-ios/**`, `backend/**` or the workflow itself. It can also be started by hand from the repository's **Actions** tab (*iOS Tests → Run workflow*). It is separate from `ci.yml`, so web and iOS results don't block each other.
+
+| Step | What it does |
+|---|---|
+| Runner | `xcode-27` – macOS 27 with Xcode 27.2 and the iOS 27.2 iPhone 17 simulator, the same setup as §7 |
+| Database | Installs PostgreSQL 16 with Homebrew, creates a throwaway `kilala_test` database and loads `schema.sql` + `seed.sql` |
+| Backend | `npm ci`, `npm run build`, starts `node dist/index.js` on port 5001 and waits for `/api/health` |
+| Tests | Boots the simulator, then runs `xcodebuild test` with the shared **Kilala** scheme (`Kilala.xcodeproj/xcshareddata/xcschemes/Kilala.xcscheme`), serially (`-parallel-testing-enabled NO`) for stable timing on CI machines |
+| Report | Writes a pass / fail / skip / known-issue table to the run's summary page; on failure, uploads the `.xcresult` (with screenshots), the `xcodebuild` log and the backend and Postgres logs as the **ios-test-results** artifact (kept 7 days) |
+
+A failing iOS test fails the **iOS Unit and UI Tests** check on the PR. Known issues (§3.2) are expected failures and don't fail the check. To make the check required before merging, add it to a branch protection rule for `dev` (repository Settings → Branches).
 
 ---
 
@@ -469,7 +479,7 @@ These issues came up while designing the tests. **None are fixed in this branch*
 | F-04 | Security | `Info.plist` sets `NSAllowsArbitraryLoads = true`, which allows plain HTTP to **every** server, not just the local backend. `NSAllowsLocalNetworking` is enough for development, and release builds should use HTTPS. APP-02 accepts either setting, so tightening it won't break the test. | Low (hardening) |
 | F-05 | Testability | The views have no `accessibilityIdentifier`s. The UI tests find elements by visible text (collected in `UIText` in `KilalaUITestSupport.swift`), and find the cardholder sign-up fields by position because they have empty placeholders. Adding identifiers would make the tests resistant to copy changes. Likewise, the category list in `BusinessSignupView` is `private`, so SCH-03 has to compare against a copy; making it `internal` (or moving it to a shared model) would let the test read the real list. | Low |
 | F-06 | Sign-up UX | The date of birth picker defaults to today and accepts future dates. Business sign-up has no password rules and no client-side email format check. | Low |
-| F-07 | CI/CD | `.github/workflows/ci.yml` has no iOS job, and the project has no **shared** Xcode scheme (`xcshareddata`). `xcodebuild` currently relies on an auto-generated scheme. Ops would need a macOS runner and a shared scheme for iOS tests to run in CI. | Ops backlog |
+| F-07 | CI/CD | **Addressed in branch `chore/ci/ios-tests`:** a shared scheme and `.github/workflows/ios-tests.yml` (§5.3). Original finding: `.github/workflows/ci.yml` has no iOS job, and the project has no **shared** Xcode scheme (`xcshareddata`). `xcodebuild` currently relies on an auto-generated scheme. Ops would need a macOS runner and a shared scheme for iOS tests to run in CI. | Ops backlog |
 | F-08 | Backend (for Ops) | If `JWT_SECRET` is missing, the backend falls back to a hard-coded secret, and the masterfile contains the live database password and JWT secret in plain text. Change both and keep them out of shared documents. | High (security, backend/Ops) |
 | F-09 | API agreement | The `POST /api/auth/verify-record` handler tries to include `middle_name` in its response, but the SQL query doesn't select that column, so the key is always absent from the JSON. The app handles this (API-07), but the response doesn't contain what the code intends. | Low |
 | F-10 | Repository | The `.gitignore` rule `*.xcodeproj/*` contains a slash, so git applies it only at the repo root, never to `kilala-ios/Kilala/Kilala.xcodeproj`. Personal Xcode files (`xcuserdata/`) aren't ignored; one developer's are already committed. A rule such as `**/*.xcodeproj/xcuserdata/` would fix it. This branch doesn't commit any `xcuserdata`. | Low |
