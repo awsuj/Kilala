@@ -198,13 +198,13 @@ CH-07 stops after the known-issue check: its steps 2–3 are automated once the 
 
 #### iOS Business App – `BusinessAppUITests.swift`
 
-QR codes are entered in the scanner's **Simulator Debug Input**, because the simulator has no camera; it runs the same verification as a camera scan.
+Since PR #35 a business lands on the **Business Dashboard**, and the Merchant Scanner is a drawer at its bottom ("Pull Up to Scan QR ID"). The tests open it by tapping the handle, and close it again before using the dashboard's History or Logout buttons, which an open drawer covers. QR codes are entered in the scanner's **Simulator Debug Input**, because the simulator has no camera; it runs the same verification as a camera scan.
 
 | ID | Test | Type | Backend | Expected result | Known issue |
 |---|---|---|---|---|---|
-| BUS-01 | Business user logs in to the Merchant Scanner and logs out | Positive | Live | **Merchant Scanner**, then Logout returns to login | – |
+| BUS-01 | Business user logs in to the Merchant Scanner and logs out | Positive | Live | **Business Dashboard**; tapping the scanner drawer opens the scanner (QR input ready); Logout returns to login | – |
 | BUS-02 | Registration requires all fields, a valid email and an 8-character password | Negative | Live | Register Business disabled on an empty form and enabled once valid (not submitted). Plan: also disabled, with hints, for `not-an-email` / `short` | F-06 (email and password rules) |
-| BUS-03 | Register a new business and land on the Merchant Scanner | Positive | Live, **write** | A unique `qa.ios.<random>@example.test` business is created and signed in | – |
+| BUS-03 | Register a new business and land on the Merchant Scanner | Positive | Live, **write** | A unique `qa.ios.<random>@example.test` business is created and signed in to the **Business Dashboard** | – |
 | BUS-04 | Verify an active cardholder's QR code | Positive | Live, **write** | VERIFIED, "Valid Privilege Card", Juan Santos Dela Cruz, MKT-PWD-2026-00481 and the discount section | – |
 | BUS-05 | Unrecognized QR code is flagged as invalid | Negative | Live | INVALID / REVOKED, "No Matching Cardholder Record", no Record Transaction; Dismiss returns to the scanner | – |
 | BUS-06 | Revoked card is not accepted | Negative | Live, **write** | The LGU admin creates a throwaway QA card and revokes it: "Card status is REVOKED", status REVOKED, no discount | – |
@@ -233,7 +233,7 @@ Each test runs in four UI configurations: light and dark appearance, each in por
 | `testLaunch` | – | Launch Screen (login) |
 | `testLaunchCardholderSignup` | – | Cardholder Signup |
 | `testLaunchCardholderDigitalID` | Live | Cardholder Digital ID (after Juan's details load) |
-| `testLaunchMerchantScanner` | Live | Merchant Scanner |
+| `testLaunchMerchantScanner` | Live | Business Dashboard (after a business login) |
 
 ---
 
@@ -386,7 +386,7 @@ Use these to check by hand what the automated tests cover, for example during Sp
 | M-03 | Log in as `juan.pwd@email.com` with password `wrong`. | Red text "Invalid credentials or server offline."; stays on login. | CH-02 |
 | M-04 | Log in as `juan.pwd@email.com` with the test password. | "My Kilala ID" with Juan's card `MKT-PWD-2026-00481`. Tap **Logout** → back to login. | CH-01, CH-04 |
 | M-05 | Log in as `maria.senior@email.com`. | "My Kilala ID" with Maria's senior citizen card. | CH-01 |
-| M-06 | Log in as `cashier@mercury-mkt.com`. | "Merchant Scanner". Tap **Logout** → back to login. | BUS-01 |
+| M-06 | Log in as `cashier@mercury-mkt.com`. | "Business Dashboard" with a "Pull Up to Scan QR ID" drawer at the bottom. Tap **Logout** → back to login. | BUS-01 |
 | M-07 | Log in as `admin@makati.gov.ph`. | Message to use the Kilala Web Portal, and a Logout button. | `testLGUAdminIsDirectedToWebPortal` |
 | M-08 | Log in as Juan, then quit the app from the app switcher and reopen it. | Login screen; you must sign in again. | CH-04 |
 | M-09 | Stop the backend (Ctrl-C in its terminal) and log in as Juan. Restart the backend afterwards. | "Invalid credentials or server offline." | Manual only |
@@ -396,7 +396,7 @@ Use these to check by hand what the automated tests cover, for example during Sp
 | M-13 | Same as M-12 but leave **Middle Name** empty. | Currently "No matching LGU record found…". See finding F-02. | CH-06 |
 | M-14 | Fill in made-up details and tap **Verify Record**. | "No matching LGU record found. Please check your details." | LIVE-05 (API level) |
 | M-15 | Tap **Register your Business**. | Form with Issuing LGU (Makati City (MKT) preselected), business fields, email and password. Register Business is greyed out. | BUS-02 |
-| M-16 | Fill in all fields marked * with new values and tap **Register Business**. *(Creates data – local database only.)* | Signed in on "Merchant Scanner". | BUS-03, LIVE-09 |
+| M-16 | Fill in all fields marked * with new values and tap **Register Business**. *(Creates data – local database only.)* | Signed in on "Business Dashboard". | BUS-03, LIVE-09 |
 | M-17 | Repeat M-16 with the same email or permit number. | Alert "Duplicate Registration – Email or Business Permit No. already exists". | LIVE-09 (API level) |
 
 To check the API directly, without the app:
@@ -416,6 +416,8 @@ curl -s localhost:5001/api/business/me   -H "Authorization: Bearer <token>"
 All runs used Xcode 27.2, the iPhone 17 simulator (iOS 27.2) and a local backend on a local PostgreSQL database loaded with `schema.sql` + `seed.sql`. For runs A and B, PR #32's unclaimed record (Ana Santos) was also added to the **local** database so that LIVE-07 could run.
 
 > **How results are counted:** the result summary counts each test **function** once. Cases of a parameterized test (for example AUTH-03's four status codes) and the four configurations of each screenshot test are not counted separately. That gives 47 unit tests and 22 UI tests, 69 in total.
+
+**Run E – after PR #35 (Business Dashboard), branch `fix/app-bus/local-api-url`, everything, write tests on: passed – 68 passed, 5 known issues, 0 failed, 0 skipped.** 20 Nov 2026, Xcode's default parallel testing. This run verifies the Debug `localhost` API URL and the BUS tests' new dashboard and scanner-drawer flow. Earlier attempts on this branch failed for test-side reasons now handled in the helpers: the open scanner drawer covering Logout, a late "Save Password?" prompt clearing the email field during a second login, and a local backend left unresponsive by a branch switch (restart the backend after switching branches).
 
 **Run D – MCO4 plan tests (branch `test/app/automation-plan`), everything, write tests on: all 73 tests ran as expected.** 20 Nov 2026, Xcode's default parallel testing (simulator clones).
 ```sh

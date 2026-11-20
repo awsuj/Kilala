@@ -65,7 +65,11 @@ enum UIText {
 
     // ContentView / post-login screens
     static let cardholderHome = "My Kilala ID"
-    static let businessHome = "Merchant Scanner"
+    /// Since PR #35 a business lands on the dashboard; the scanner is a drawer at the bottom.
+    static let businessHome = "Business Dashboard"
+    static let scannerDrawerClosed = "Pull Up to Scan QR ID"
+    static let scannerDrawerOpen = "QR Verification Scanner"
+    static let historyButton = "History"
     static let lguAdminNotice = "Please use the Kilala Web Portal for LGU Admin access."
     static let logout = "Logout"
 
@@ -166,18 +170,36 @@ extension XCTestCase {
         return app
     }
 
-    /// Fills the login form and taps Login.
+    /// Fills the login form and taps Login. iOS's "Save Password?" prompt for a previous
+    /// login can appear while typing and swallow the text, so the email is checked and the
+    /// form refilled once if it didn't stick.
     @MainActor
-    func logIn(_ app: XCUIApplication, email: String, password: String) {
+    func logIn(_ app: XCUIApplication, email: String, password: String,
+               file: StaticString = #filePath, line: UInt = #line) {
         let emailField = app.textFields[UIText.email]
-        focus(emailField, in: app)
-        emailField.typeText(email)
-
         let passwordField = app.secureTextFields[UIText.password]
-        focus(passwordField, in: app)
-        passwordField.typeText(password)
-
+        dismissSavePasswordPromptIfShown(app, timeout: 1)
+        for attempt in 0..<2 {
+            replaceText(in: emailField, with: email, app: app)
+            focus(passwordField, in: app)
+            // Typing into a secure field that already has text replaces it.
+            passwordField.typeText(password)
+            if (emailField.value as? String) == email { break }
+            if attempt == 1 {
+                XCTFail("The email didn't stay in the login form", file: file, line: line)
+            }
+            dismissSavePasswordPromptIfShown(app, timeout: 1)
+        }
         app.buttons[UIText.login].tap()
+    }
+
+    /// Focuses a text field, deletes whatever it contains and types `text`.
+    @MainActor
+    func replaceText(in field: XCUIElement, with text: String, app: XCUIApplication) {
+        focus(field, in: app)
+        let current = field.value as? String ?? ""
+        let existing = current == field.placeholderValue ? "" : current
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count) + text)
     }
 
     /// Taps a text field until it has keyboard focus. Right after launch (or while an iOS
@@ -204,7 +226,9 @@ extension XCTestCase {
         let logout = app.buttons[UIText.logout]
         for _ in 0..<3 {
             dismissSavePasswordPromptIfShown(app, timeout: 1)
-            waitUntilHittable(logout, timeout: 3)
+            // On the Business Dashboard an open scanner drawer covers the Logout button.
+            if app.staticTexts[UIText.scannerDrawerOpen].exists { closeScannerDrawer(app) }
+            _ = logout.waitForExistence(timeout: 3)
             logout.tap()
             if app.buttons[UIText.login].waitForExistence(timeout: 5) { return }
         }
@@ -271,15 +295,6 @@ extension XCTestCase {
         }
     }
 
-    /// Waits (up to `timeout`) until the element can receive a tap; returns whether it can.
-    @MainActor
-    @discardableResult
-    func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"),
-                                                    object: element)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
-    }
-
     /// Attaches a screenshot to the test report (kept even when the test passes),
     /// following the pattern in KilalaUITestsLaunchTests.
     @MainActor
@@ -339,13 +354,13 @@ extension XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 10), "Simulator Debug Input missing", file: file, line: line)
         // iOS's "Save Password?" prompt can appear a few seconds after login and cover the input.
         dismissSavePasswordPromptIfShown(app, timeout: 1)
-        waitUntilHittable(input, timeout: 3)
         type(token, into: input, in: app)
         dismissKeyboard(app)
         app.buttons[UIText.verify].tap()
     }
 
-    /// Logs in as the seeded business and waits for the Merchant Scanner.
+    /// Logs in as the seeded business, waits for the Business Dashboard and opens the
+    /// scanner drawer (tapping its handle), so the Simulator Debug Input is on screen.
     @MainActor
     @discardableResult
     func openMerchantScanner(file: StaticString = #filePath, line: UInt = #line) -> XCUIApplication {
@@ -353,8 +368,43 @@ extension XCTestCase {
         logIn(app, email: UITestAccounts.business, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
         XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 15),
-                      "Business should land on the Merchant Scanner", file: file, line: line)
+                      "Business should land on the Business Dashboard", file: file, line: line)
+        openScannerDrawer(app, file: file, line: line)
         return app
+    }
+
+    /// Opens the dashboard's scanner drawer by tapping its handle.
+    @MainActor
+    func openScannerDrawer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let handle = app.staticTexts[UIText.scannerDrawerClosed]
+        XCTAssertTrue(handle.waitForExistence(timeout: 10), "Scanner drawer handle missing", file: file, line: line)
+        dismissSavePasswordPromptIfShown(app, timeout: 1)
+        handle.tap()
+        XCTAssertTrue(app.staticTexts[UIText.scannerDrawerOpen].waitForExistence(timeout: 5),
+                      "Scanner drawer did not open", file: file, line: line)
+        // The handle text changes before the slide-up animation ends; wait until the
+        // scanner's input is on screen so the next tap lands where it should.
+        let input = app.textFields[UIText.qrDebugInput]
+        let deadline = Date().addingTimeInterval(5)
+        while !isOnScreen(input, in: app) && Date() < deadline {
+            _ = input.waitForExistence(timeout: 0.5)
+        }
+    }
+
+    /// Closes the scanner drawer by tapping its handle, uncovering the dashboard.
+    @MainActor
+    func closeScannerDrawer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let handle = app.staticTexts[UIText.scannerDrawerOpen]
+        XCTAssertTrue(handle.waitForExistence(timeout: 5), "Scanner drawer is not open", file: file, line: line)
+        // Tap the handle; if a tap is lost (e.g. while the drawer is still settling),
+        // drag the handle down instead, as a user would.
+        for attempt in 0..<3 {
+            if attempt == 0 { handle.tap() } else { handle.swipeDown() }
+            if app.staticTexts[UIText.scannerDrawerClosed].waitForExistence(timeout: 3) { return }
+            if !handle.exists { break }
+        }
+        XCTAssertTrue(app.staticTexts[UIText.scannerDrawerClosed].exists,
+                      "Scanner drawer did not close", file: file, line: line)
     }
 
     // MARK: HTTP
