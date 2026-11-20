@@ -1,0 +1,183 @@
+# =============================================================================
+# Kilala – iOS QA automation
+# =============================================================================
+# Builds the iOS app and runs all of its tests on a macOS runner:
+#   - KilalaTests   (Swift Testing unit tests: models, schema, APIService, JWT)
+#   - KilalaUITests (XCUITest: the MCO4 Automation Test Plan cases CH-01 – CH-08
+#                    and BUS-01 – BUS-11, plus supporting launch tests)
+#
+# It runs on every pull request to dev (and every push to dev) that changes the
+# iOS app or the backend, because the iOS tests exercise both. It is a separate
+# workflow from ci.yml so iOS and web results don't block each other.
+#
+# The backend runs against a throwaway PostgreSQL database seeded from
+# backend/src/schema/schema.sql and seed.sql – never a shared database.
+# See kilala-ios/TESTING.md for running the same tests locally.
+# =============================================================================
+
+name: iOS Tests
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - 'kilala-ios/**'
+      - 'backend/**'
+      - '.github/workflows/ios-tests.yml'
+  push:
+    branches:
+      - dev
+    paths:
+      - 'kilala-ios/**'
+      - 'backend/**'
+      - '.github/workflows/ios-tests.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-tests:
+    name: iOS Unit and UI Tests
+    # macOS 27 with Xcode 27.2 and the iOS 27.2 simulator: the same setup the
+    # suite is developed and verified on (see TESTING.md §7). If this preview
+    # image is ever unavailable, use `macos-26` with Xcode_26.6.app and iOS 26.5.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      XCODE_APP: /Applications/Xcode_27.2.app
+      SIMULATOR_NAME: iPhone 17
+      SIMULATOR_RUNTIME: iOS-27-2
+      DB_NAME: kilala_test
+      PORT: '5001'
+      JWT_SECRET: ci-only-secret
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Start PostgreSQL and load the test data
+        run: |
+          brew install postgresql@16
+          PG_BIN="$(brew --prefix postgresql@16)/bin"
+          echo "$PG_BIN" >> "$GITHUB_PATH"
+          export PATH="$PG_BIN:$PATH"
+
+          PGDATA="$RUNNER_TEMP/pgdata"
+          initdb -D "$PGDATA" -U "$(whoami)" --auth=trust -E UTF8 --locale=C > /dev/null
+          pg_ctl -D "$PGDATA" -l "$RUNNER_TEMP/postgres.log" -o "-p 5432" -w start
+          pg_isready -h localhost -p 5432
+
+          createdb -h localhost "$DB_NAME"
+          psql -h localhost -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -f backend/src/schema/schema.sql
+          psql -h localhost -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -f backend/src/schema/seed.sql
+          echo "DATABASE_URL=postgresql://$(whoami)@localhost:5432/$DB_NAME" >> "$GITHUB_ENV"
+
+      - name: Start the backend API
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+          nohup node dist/index.js > "$RUNNER_TEMP/backend.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "http://localhost:$PORT/api/health"; then
+              echo
+              echo "Backend is up on port $PORT."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not become healthy:"
+          cat "$RUNNER_TEMP/backend.log"
+          exit 1
+
+      - name: Boot the iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, os, sys
+          devices = json.load(sys.stdin)["devices"]
+          for runtime, entries in devices.items():
+              if runtime.endswith(os.environ["SIMULATOR_RUNTIME"]):
+                  for device in entries:
+                      if device["name"] == os.environ["SIMULATOR_NAME"]:
+                          print(device["udid"])
+                          sys.exit(0)
+          ')
+          if [ -z "$UDID" ]; then
+            echo "No $SIMULATOR_NAME simulator on $SIMULATOR_RUNTIME. Available devices:"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          # -b boots the simulator if needed and waits until it has finished booting.
+          xcrun simctl bootstatus "$UDID" -b
+          echo "SIMULATOR_ID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Run iOS unit and UI tests
+        working-directory: kilala-ios/Kilala
+        env:
+          # Enables the tests that create or change test data (only ever the CI database).
+          TEST_RUNNER_KILALA_ALLOW_WRITE_TESTS: '1'
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Kilala.xcodeproj \
+            -scheme Kilala \
+            -destination "id=$SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/KilalaTests.xcresult" \
+            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Summarize test results
+        if: always()
+        run: |
+          RESULT="$RUNNER_TEMP/KilalaTests.xcresult"
+          if [ ! -d "$RESULT" ]; then
+            echo "No test results were produced (the build or setup failed)." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          xcrun xcresulttool get test-results summary --path "$RESULT" | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)
+          lines = [
+              "## iOS test results",
+              "",
+              "| Result | Total | Passed | Failed | Skipped | Known issues (expected failures) |",
+              "|---|---|---|---|---|---|",
+              "| {} | {} | {} | {} | {} | {} |".format(s.get("result"), s.get("totalTestCount"), s.get("passedTests"),
+                                                  s.get("failedTests"), s.get("skippedTests"), s.get("expectedFailures")),
+          ]
+          failures = s.get("testFailures") or []
+          if failures:
+              lines += ["", "### Failures", ""]
+              lines += ["- `{}`: {}".format(f.get("testIdentifierString"), (f.get("failureText") or "").splitlines()[0][:300])
+                        for f in failures]
+          print("\n".join(lines))
+          ' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results and logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/KilalaTests.xcresult
+            ${{ runner.temp }}/xcodebuild.log
+            ${{ runner.temp }}/backend.log
+            ${{ runner.temp }}/postgres.log
