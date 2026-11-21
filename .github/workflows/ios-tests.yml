@@ -32,9 +32,9 @@ on:
       - 'kilala-ios/**'
       - 'backend/**'
       - '.github/workflows/ios-tests.yml'
-  # Scheduled nightly run at 2:00 AM UTC (10:00 AM PHT) to execute the full UI test suite
+  # Scheduled nightly run at 2:00 AM PHT (18:00 UTC previous day) to execute the full UI test suite
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 18 * * *'
   # Allows manual triggers with option to choose test scope
   workflow_dispatch:
     inputs:
