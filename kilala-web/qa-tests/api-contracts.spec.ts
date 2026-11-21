@@ -130,7 +130,7 @@ test.describe('POST /api/lgu-admins contracts', () => {
     const res = await request.post(`${API_BASE_URL}/api/auth/login`, {
       data: {
         email: process.env.SUPERADMIN_EMAIL ?? 'superadmin@kilala.gov.ph',
-        password: process.env.SUPERADMIN_PASSWORD,
+        password: process.env.SUPERADMIN_PASSWORD ?? 'MockHashForTestingOnly123456789012',
       },
     });
     const body = await res.json();
@@ -191,7 +191,7 @@ test.describe('SUPERADMIN all-cities mode', () => {
     const saRes = await request.post(`${API_BASE_URL}/api/auth/login`, {
       data: {
         email: process.env.SUPERADMIN_EMAIL ?? 'superadmin@kilala.gov.ph',
-        password: process.env.SUPERADMIN_PASSWORD,
+        password: process.env.SUPERADMIN_PASSWORD ?? 'MockHashForTestingOnly123456789012',
       },
     });
     const saBody = await saRes.json();

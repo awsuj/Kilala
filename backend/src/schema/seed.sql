@@ -97,3 +97,31 @@ INSERT INTO transactions (
     CURRENT_TIMESTAMP
 );
 
+-- 7. Metro Manila (NCR) LGUs for the city dropdown (Makati 'MKT' already inserted above).
+INSERT INTO lgus (lgu_code, municipality_name, province, region)
+VALUES
+  ('CAL', 'Caloocan', NULL, 'NCR'),
+  ('LPN', 'Las Piñas', NULL, 'NCR'),
+  ('MKT', 'Makati City', NULL, 'NCR'),
+  ('MAL', 'Malabon', NULL, 'NCR'),
+  ('MND', 'Mandaluyong', NULL, 'NCR'),
+  ('MNL', 'Manila', NULL, 'NCR'),
+  ('MRK', 'Marikina', NULL, 'NCR'),
+  ('MUN', 'Muntinlupa', NULL, 'NCR'),
+  ('NAV', 'Navotas', NULL, 'NCR'),
+  ('PAR', 'Parañaque', NULL, 'NCR'),
+  ('PSY', 'Pasay', NULL, 'NCR'),
+  ('PSG', 'Pasig', NULL, 'NCR'),
+  ('PAT', 'Pateros', NULL, 'NCR'),
+  ('QC', 'Quezon City', NULL, 'NCR'),
+  ('SJN', 'San Juan', NULL, 'NCR'),
+  ('TAG', 'Taguig', NULL, 'NCR'),
+  ('VAL', 'Valenzuela', NULL, 'NCR')
+ON CONFLICT (lgu_code) DO NOTHING;
+
+-- 8. Super admin (full access, not tied to a city). Mock hash for local/CI testing,
+--    matching the login bypass used by the other seeded test accounts.
+INSERT INTO users (id, email, password_hash, role) VALUES
+('22222222-2222-2222-2222-2222222229a1', 'superadmin@kilala.gov.ph', '$2b$10$MockHashForTestingOnly123456789012', 'SUPERADMIN')
+ON CONFLICT (email) DO NOTHING;
+

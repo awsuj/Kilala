@@ -3,7 +3,7 @@
 -- Schema by Joshua Calibo (Last updated: 10/21/2026)
 
 -- 1. Custom ENUM Types
-CREATE TYPE user_role AS ENUM ('LGU_ADMIN', 'CARDHOLDER', 'BUSINESS');
+CREATE TYPE user_role AS ENUM ('LGU_ADMIN', 'CARDHOLDER', 'BUSINESS', 'SUPERADMIN');
 CREATE TYPE privilege_type AS ENUM ('PWD', 'SENIOR_CITIZEN');
 CREATE TYPE card_status AS ENUM ('ACTIVE', 'EXPIRED', 'REVOKED', 'SUSPENDED');
 CREATE TYPE business_category AS ENUM (
