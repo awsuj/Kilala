@@ -164,6 +164,10 @@ extension XCTestCase {
     @discardableResult
     func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
+        if app.state != .notRunning {
+            app.terminate()
+            _ = app.wait(for: .notRunning, timeout: 5)
+        }
         app.launch()
         XCTAssertTrue(app.staticTexts[UIText.appTitle].waitForExistence(timeout: 10),
                       "Login screen did not appear after launch")

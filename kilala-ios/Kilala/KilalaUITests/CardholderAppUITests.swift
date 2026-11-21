@@ -32,7 +32,9 @@ final class CardholderAppUITests: XCTestCase {
     override func tearDownWithError() throws {
         // Close the app so the next test starts from a cold launch on the login screen.
         MainActor.assumeIsolated {
-            XCUIApplication().terminate()
+            let app = XCUIApplication()
+            app.terminate()
+            _ = app.wait(for: .notRunning, timeout: 5)
         }
     }
 
@@ -127,6 +129,7 @@ final class CardholderAppUITests: XCTestCase {
         dismissSavePasswordPromptIfShown(app)
         XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15))
         app.terminate()
+        _ = app.wait(for: .notRunning, timeout: 5)
         app.launch()
 
         XCTAssertTrue(app.buttons[UIText.login].waitForExistence(timeout: 10),

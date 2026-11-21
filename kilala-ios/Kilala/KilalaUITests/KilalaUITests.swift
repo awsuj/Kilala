@@ -32,7 +32,9 @@ final class KilalaUITests: XCTestCase {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
         // Close the app so the next test starts from a cold launch.
         MainActor.assumeIsolated {
-            XCUIApplication().terminate()
+            let app = XCUIApplication()
+            app.terminate()
+            _ = app.wait(for: .notRunning, timeout: 5)
         }
     }
 

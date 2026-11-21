@@ -34,7 +34,9 @@ final class BusinessAppUITests: XCTestCase {
     override func tearDownWithError() throws {
         // Close the app so the next test starts from a cold launch on the login screen.
         MainActor.assumeIsolated {
-            XCUIApplication().terminate()
+            let app = XCUIApplication()
+            app.terminate()
+            _ = app.wait(for: .notRunning, timeout: 5)
         }
     }
 
