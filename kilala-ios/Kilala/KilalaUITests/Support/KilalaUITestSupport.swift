@@ -379,7 +379,13 @@ extension XCTestCase {
         let handle = app.staticTexts[UIText.scannerDrawerClosed]
         XCTAssertTrue(handle.waitForExistence(timeout: 10), "Scanner drawer handle missing", file: file, line: line)
         dismissSavePasswordPromptIfShown(app, timeout: 1)
-        handle.tap()
+        // Tap the handle; if a tap is lost (e.g. while the dashboard is settling),
+        // swipe up instead to guarantee the drawer opens on CI runners.
+        for attempt in 0..<3 {
+            if attempt == 0 { handle.tap() } else { handle.swipeUp() }
+            if app.staticTexts[UIText.scannerDrawerOpen].waitForExistence(timeout: 3) { break }
+            if !handle.exists { break }
+        }
         XCTAssertTrue(app.staticTexts[UIText.scannerDrawerOpen].waitForExistence(timeout: 5),
                       "Scanner drawer did not open", file: file, line: line)
         // The handle text changes before the slide-up animation ends; wait until the
