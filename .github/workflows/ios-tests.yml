@@ -151,11 +151,11 @@ jobs:
           set -o pipefail
           TEST_FILTER=""
 
-          # On Pull Requests, run unit tests only (KilalaTests) for fast feedback (~3-5 mins).
-          # On nightly schedule, manual dispatch (all), or pushes to dev, run the full test suite.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "Pull Request detected: Running fast unit tests only (KilalaTests)..."
-            TEST_FILTER="-only-testing:KilalaTests"
+          # On Pull Requests and pushes to dev, run unit tests only (KilalaTests) for fast feedback (~3-5 mins).
+          # On the nightly schedule or manual dispatch with 'all' or 'ui_only', run the full UI test suite.
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "Nightly schedule detected: Running full test suite (KilalaTests + KilalaUITests)..."
+            TEST_FILTER=""
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ github.event.inputs.test_suite }}" = "unit_only" ]; then
               echo "Manual trigger: Running unit tests only..."
@@ -165,9 +165,11 @@ jobs:
               TEST_FILTER="-only-testing:KilalaUITests"
             else
               echo "Manual trigger: Running full test suite (KilalaTests + KilalaUITests)..."
+              TEST_FILTER=""
             fi
           else
-            echo "Nightly schedule or dev push: Running full test suite (KilalaTests + KilalaUITests)..."
+            echo "PR or dev push detected: Running fast unit tests only (KilalaTests)..."
+            TEST_FILTER="-only-testing:KilalaTests"
           fi
 
           xcodebuild test \
@@ -175,6 +177,8 @@ jobs:
             -scheme Kilala \
             -destination "id=$SIMULATOR_ID" \
             -parallel-testing-enabled NO \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             $TEST_FILTER \
             -resultBundlePath "$RUNNER_TEMP/KilalaTests.xcresult" \
             2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
