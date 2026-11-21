@@ -32,7 +32,21 @@ on:
       - 'kilala-ios/**'
       - 'backend/**'
       - '.github/workflows/ios-tests.yml'
+  # Scheduled nightly run at 2:00 AM UTC (10:00 AM PHT) to execute the full UI test suite
+  schedule:
+    - cron: '0 2 * * *'
+  # Allows manual triggers with option to choose test scope
   workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'unit_only'
+          - 'ui_only'
 
 concurrency:
   group: ios-tests-${{ github.ref }}
@@ -135,11 +149,33 @@ jobs:
           TEST_RUNNER_KILALA_ALLOW_WRITE_TESTS: '1'
         run: |
           set -o pipefail
+          TEST_FILTER=""
+
+          # On Pull Requests, run unit tests only (KilalaTests) for fast feedback (~3-5 mins).
+          # On nightly schedule, manual dispatch (all), or pushes to dev, run the full test suite.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Pull Request detected: Running fast unit tests only (KilalaTests)..."
+            TEST_FILTER="-only-testing:KilalaTests"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.test_suite }}" = "unit_only" ]; then
+              echo "Manual trigger: Running unit tests only..."
+              TEST_FILTER="-only-testing:KilalaTests"
+            elif [ "${{ github.event.inputs.test_suite }}" = "ui_only" ]; then
+              echo "Manual trigger: Running UI tests only..."
+              TEST_FILTER="-only-testing:KilalaUITests"
+            else
+              echo "Manual trigger: Running full test suite (KilalaTests + KilalaUITests)..."
+            fi
+          else
+            echo "Nightly schedule or dev push: Running full test suite (KilalaTests + KilalaUITests)..."
+          fi
+
           xcodebuild test \
             -project Kilala.xcodeproj \
             -scheme Kilala \
             -destination "id=$SIMULATOR_ID" \
             -parallel-testing-enabled NO \
+            $TEST_FILTER \
             -resultBundlePath "$RUNNER_TEMP/KilalaTests.xcresult" \
             2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
 
