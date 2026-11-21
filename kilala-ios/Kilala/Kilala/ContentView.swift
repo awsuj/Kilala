@@ -14,7 +14,7 @@ struct ContentView: View {
         if let session = session {
             switch session.user.role {
             case .cardholder:
-                DigitalIDView(token: session.token) {
+                CardholderDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
                     self.session = nil
                 }
