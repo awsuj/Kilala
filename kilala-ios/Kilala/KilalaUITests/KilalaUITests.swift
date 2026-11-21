@@ -4,8 +4,10 @@
 //
 //  Created by Joshua Calibo on 10/21/26.
 //
-//  Sprint 1 – app launch smoke tests. Login and signup flows are covered in
-//  LoginUITests.swift and SignupUITests.swift; shared helpers are in
+//  Supporting smoke tests (not in the MCO4 plan): the app launches to the login
+//  screen, LGU admins are sent to the web portal, and launch time is measured.
+//  The planned test cases are in CardholderAppUITests.swift (CH-01 – CH-08) and
+//  BusinessAppUITests.swift (BUS-01 – BUS-11); shared helpers are in
 //  Support/KilalaUITestSupport.swift.
 //
 
@@ -30,12 +32,14 @@ final class KilalaUITests: XCTestCase {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
         // Close the app so the next test starts from a cold launch.
         MainActor.assumeIsolated {
-            XCUIApplication().terminate()
+            let app = XCUIApplication()
+            app.terminate()
+            _ = app.wait(for: .notRunning, timeout: 5)
         }
     }
 
     @MainActor
-    func testUI16_AppLaunchesToLoginScreen() throws {
+    func testAppLaunchesToLoginScreen() throws {
         // UI tests must launch the application that they test.
         let app = XCUIApplication()
         app.launch()
@@ -49,21 +53,16 @@ final class KilalaUITests: XCTestCase {
     }
 
     @MainActor
-    func testUI17_RelaunchStartsSignedOut() throws {
-        // The JWT is held in memory only, so a relaunch must ask for credentials again.
-        // If the team adds "stay signed in" (e.g. Keychain storage), update this test.
+    func testLGUAdminIsDirectedToWebPortal() throws {
+        // LGU admins have no screens in the app; they are told to use the web portal.
         try requireBackend()
         let app = launchApp()
-        logIn(app, email: UITestAccounts.cardholderPWD, password: UITestAccounts.password)
+        logIn(app, email: UITestAccounts.lguAdmin, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15))
 
-        app.terminate()
-        app.launch()
-
-        XCTAssertTrue(app.buttons[UIText.login].waitForExistence(timeout: 10),
-                      "A relaunched app should start on the login screen")
-        XCTAssertFalse(app.navigationBars[UIText.cardholderHome].exists)
+        XCTAssertTrue(app.staticTexts[UIText.lguAdminNotice].waitForExistence(timeout: 15),
+                      "LGU admins should be told to use the web portal")
+        logOut(app)
     }
 
     @MainActor

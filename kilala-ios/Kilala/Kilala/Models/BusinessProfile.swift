@@ -18,6 +18,7 @@ struct BusinessProfile: Codable, Identifiable {
     let tinNumber: String
     let address: String
     let isAccredited: Bool
+    let lguName: String?
     let createdAt: String?
     let updatedAt: String?
 }
