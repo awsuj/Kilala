@@ -97,3 +97,32 @@ INSERT INTO transactions (
     CURRENT_TIMESTAMP
 );
 
+-- 7. Metro Manila (NCR) LGUs for the city dropdown (Makati 'MKT' already inserted above).
+INSERT INTO lgus (lgu_code, municipality_name, province, region)
+VALUES
+  ('CAL', 'Caloocan', NULL, 'NCR'),
+  ('LPN', 'Las Piñas', NULL, 'NCR'),
+  ('MKT', 'Makati City', NULL, 'NCR'),
+  ('MAL', 'Malabon', NULL, 'NCR'),
+  ('MND', 'Mandaluyong', NULL, 'NCR'),
+  ('MNL', 'Manila', NULL, 'NCR'),
+  ('MRK', 'Marikina', NULL, 'NCR'),
+  ('MUN', 'Muntinlupa', NULL, 'NCR'),
+  ('NAV', 'Navotas', NULL, 'NCR'),
+  ('PAR', 'Parañaque', NULL, 'NCR'),
+  ('PSY', 'Pasay', NULL, 'NCR'),
+  ('PSG', 'Pasig', NULL, 'NCR'),
+  ('PAT', 'Pateros', NULL, 'NCR'),
+  ('QC', 'Quezon City', NULL, 'NCR'),
+  ('SJN', 'San Juan', NULL, 'NCR'),
+  ('TAG', 'Taguig', NULL, 'NCR'),
+  ('VAL', 'Valenzuela', NULL, 'NCR')
+ON CONFLICT (lgu_code) DO NOTHING;
+
+-- 8. Super admin (full access, not tied to a city).
+--    Real bcrypt hash of the password 'Kilala2026' — matches the live DB account,
+--    so the same password works everywhere (no mock, no env var needed).
+INSERT INTO users (id, email, password_hash, role) VALUES
+('22222222-2222-2222-2222-2222222229a1', 'superadmin@kilala.gov.ph', '$2b$10$Wlqf3BaNqjppdLH0Dhb9KuLOkmtpZdgR.s0Swq38Ye3UeeymOqKQC', 'SUPERADMIN')
+ON CONFLICT (email) DO NOTHING;
+

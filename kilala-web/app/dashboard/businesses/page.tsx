@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from "@/lib/api";
+import { getLguIdParam } from "@/lib/city";
 import BusinessesTable, { type Business } from "./businesses-table";
 import {
   Card,
@@ -11,9 +12,11 @@ import {
 // Wired to GET /api/lgu/businesses. Accreditation toggle calls
 // PATCH /api/lgu/businesses/:id/accreditation (see ./actions.ts).
 export default async function BusinessesPage() {
+  const lguParam = await getLguIdParam();
+
   let rows: Business[];
   try {
-    rows = await apiFetch<Business[]>("/api/lgu/businesses");
+    rows = await apiFetch<Business[]>(`/api/lgu/businesses${lguParam}`);
   } catch (e) {
     const msg = e instanceof ApiError ? e.message : "Could not reach the server.";
     return (

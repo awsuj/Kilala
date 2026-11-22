@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
-import { ALLOWED_ROLE } from "@/lib/token";
+import { isAllowedRole, landingPathForRole } from "@/lib/token";
 import LoginForm from "./login-form";
 
 export default async function LoginPage() {
   // Already signed in as an admin? Skip the form.
   const user = await getCurrentUser();
-  if (user?.role === ALLOWED_ROLE) {
-    redirect("/dashboard");
+  if (isAllowedRole(user?.role)) {
+    redirect(landingPathForRole(user?.role));
   }
 
   return (
