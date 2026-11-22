@@ -17,8 +17,69 @@ struct ScanResultSheet: View {
     @State private var showErrorAlert: Bool = false
     @State private var errorMessage: String = ""
     
+    private enum VerificationState {
+        case valid
+        case expired
+        case invalid
+    }
+
+    private var verificationState: VerificationState {
+        if result.isValid {
+            return .valid
+        }
+        let statusUpper = result.cardholderSummary?.status.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        if statusUpper == "EXPIRED" || result.message.localizedCaseInsensitiveContains("expired") {
+            return .expired
+        }
+        return .invalid
+    }
+
     private var themeColor: Color {
-        result.isValid ? .green : .red
+        switch verificationState {
+        case .valid: return .kilalaStateValid
+        case .expired: return .kilalaStateExpired
+        case .invalid: return .kilalaStateInvalid
+        }
+    }
+
+    private var bannerForegroundColor: Color {
+        switch verificationState {
+        case .valid, .invalid: return .white
+        case .expired: return .kilalaInk
+        }
+    }
+
+    private var bannerIconColor: Color {
+        switch verificationState {
+        case .valid: return .kilalaSunrise
+        case .expired: return .kilalaInk
+        case .invalid: return .white
+        }
+    }
+
+    private var statusIconName: String {
+        switch verificationState {
+        case .valid: return "checkmark.seal.fill"
+        case .expired: return "clock.badge.exclamationmark.fill"
+        case .invalid: return "xmark.octagon.fill"
+        }
+    }
+
+    private var statusTitle: String {
+        switch verificationState {
+        case .valid: return "VERIFIED"
+        case .expired: return "EXPIRED"
+        case .invalid: return result.cardholderSummary == nil ? "NOT RECOGNIZED" : "INVALID / REVOKED"
+        }
+    }
+
+    /// Readable state accent color on light surfaces (Mint/White).
+    private var readableStateTextColor: Color {
+        switch verificationState {
+        case .valid: return .kilalaStateValid
+        case .expired: return .kilalaInk
+        case .invalid: return .kilalaStateInvalid
+        }
     }
     
     private var originalAmount: Double {
@@ -40,28 +101,31 @@ struct ScanResultSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                Color.kilalaPaper
+                    .ignoresSafeArea()
+
                 ScrollView {
                     VStack(spacing: 20) {
                         // Status Banner Header
                         VStack(spacing: 10) {
-                            Image(systemName: result.isValid ? "checkmark.seal.fill" : "xmark.octagon.fill")
+                            Image(systemName: statusIconName)
                                 .font(.system(size: 56))
-                                .foregroundColor(.white)
+                                .foregroundColor(bannerIconColor)
                             
-                            Text(result.isValid ? "VERIFIED" : "INVALID / REVOKED")
-                                .font(.title2.weight(.heavy))
+                            Text(statusTitle)
+                                .font(.kilala(.title2, weight: .bold))
                                 .tracking(1)
-                                .foregroundColor(.white)
+                                .foregroundColor(bannerForegroundColor)
                             
                             Text(result.message)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.white.opacity(0.95))
+                                .font(.kilala(.subheadline, weight: .medium))
+                                .foregroundColor(bannerForegroundColor.opacity(0.92))
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
                         .padding(.horizontal, 16)
-                        .background(themeColor.gradient)
+                        .background(themeColor)
                         .cornerRadius(20)
                         
                         // Cardholder Details Card
@@ -73,27 +137,28 @@ struct ScanResultSheet: View {
                                     
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(cardholder.fullName)
-                                            .font(.title3.bold())
-                                            .foregroundColor(.primary)
+                                            .font(.kilala(.title3, weight: .bold))
+                                            .foregroundColor(.kilalaInk)
                                         
                                         Text(cardholder.lguName.uppercased())
-                                            .font(.caption.weight(.bold))
-                                            .foregroundColor(.secondary)
+                                            .font(.kilala(.caption, weight: .bold))
+                                            .foregroundColor(.kilalaInkSecondary)
                                         
                                         Text(cardholder.lguIdNumber)
-                                            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
-                                            .foregroundColor(themeColor)
+                                            .font(.kilalaMono(.subheadline, weight: .semibold))
+                                            .foregroundColor(readableStateTextColor)
                                     }
                                     
                                     Spacer()
                                 }
                                 
                                 Divider()
+                                    .overlay(Color.kilalaMintBorder)
                                 
                                 // Metadata Rows
                                 VStack(spacing: 10) {
                                     DetailRow(label: "LGU", value: cardholder.lguName)
-                                    DetailRow(label: "ID Number", value: cardholder.lguIdNumber)
+                                    DetailRow(label: "ID Number", value: cardholder.lguIdNumber, isMonospaced: true)
                                     DetailRow(
                                         label: "Privilege Type",
                                         value: cardholder.privilegeType.replacingOccurrences(of: "_", with: " ")
@@ -103,41 +168,44 @@ struct ScanResultSheet: View {
                                         DetailRow(label: "Disability Type", value: disabilityType)
                                     }
                                     
-                                    DetailRow(label: "Card Status", value: cardholder.status, valueColor: themeColor)
+                                    DetailRow(label: "Card Status", value: cardholder.status, valueColor: readableStateTextColor)
                                 }
                             }
                             .padding(18)
-                            .background(Color(.secondarySystemBackground))
+                            .background(Color.kilalaMint)
                             .cornerRadius(16)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(themeColor.opacity(0.35), lineWidth: 1.5)
+                                    .stroke(themeColor.opacity(0.45), lineWidth: 1.5)
                             )
                             
                             // Transaction Recording Section (Valid Green State Only)
                             if result.isValid {
                                 VStack(alignment: .leading, spacing: 16) {
                                     Text("Apply 20% Statutory Discount")
-                                        .font(.headline)
+                                        .font(.kilala(.headline, weight: .bold))
+                                        .foregroundColor(.kilalaInk)
                                     
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text("Total Bill Amount (₱)")
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundColor(.secondary)
+                                            .font(.kilala(.subheadline, weight: .medium))
+                                            .foregroundColor(.kilalaInkSecondary)
                                         
                                         TextField("Total Bill Amount", text: $billAmountText)
                                             .keyboardType(.decimalPad)
-                                            .font(.title3.weight(.semibold))
+                                            .font(.kilala(.title3, weight: .semibold))
+                                            .foregroundColor(.kilalaInk)
                                             .padding(12)
-                                            .background(Color(.systemBackground))
+                                            .background(Color.white)
                                             .cornerRadius(10)
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 10)
-                                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
                                             )
                                     }
                                     
                                     Divider()
+                                        .overlay(Color.kilalaMintBorder)
                                     
                                     VStack(spacing: 8) {
                                         DetailRow(
@@ -147,15 +215,16 @@ struct ScanResultSheet: View {
                                         DetailRow(
                                             label: "20% Discount",
                                             value: String(format: "-₱%.2f", discountValue),
-                                            valueColor: .green
+                                            valueColor: .kilalaStateValid
                                         )
                                         HStack {
                                             Text("Final Discounted Total")
-                                                .font(.headline)
+                                                .font(.kilala(.headline, weight: .bold))
+                                                .foregroundColor(.kilalaInk)
                                             Spacer()
                                             Text(String(format: "₱%.2f", discountedAmount))
-                                                .font(.title3.bold())
-                                                .foregroundColor(.green)
+                                                .font(.kilala(.title3, weight: .bold))
+                                                .foregroundColor(.kilalaGreen)
                                         }
                                         .padding(.top, 4)
                                     }
@@ -164,21 +233,21 @@ struct ScanResultSheet: View {
                                         recordTransaction(cardholderId: cardholder.id.uuidString)
                                     }) {
                                         Text("Record Transaction")
-                                            .font(.headline)
+                                            .font(.kilala(.headline, weight: .bold))
                                             .frame(maxWidth: .infinity)
                                             .padding()
-                                            .background(isValidBillAmount ? Color.green : Color.gray.opacity(0.5))
+                                            .background(isValidBillAmount ? Color.kilalaGreen : Color.kilalaInkMuted)
                                             .foregroundColor(.white)
                                             .cornerRadius(12)
                                     }
                                     .disabled(!isValidBillAmount || isRecordingTransaction)
                                 }
                                 .padding(18)
-                                .background(Color(.secondarySystemBackground))
+                                .background(Color.kilalaMint)
                                 .cornerRadius(16)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.green.opacity(0.35), lineWidth: 1.5)
+                                        .stroke(Color.kilalaStateValid.opacity(0.35), lineWidth: 1.5)
                                 )
                             }
                         } else {
@@ -186,29 +255,34 @@ struct ScanResultSheet: View {
                             VStack(spacing: 10) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.largeTitle)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.kilalaStateInvalid)
                                 
                                 Text("No Matching Cardholder Record")
-                                    .font(.headline)
+                                    .font(.kilala(.headline, weight: .bold))
+                                    .foregroundColor(.kilalaInk)
                                 
                                 Text("This QR code is not registered in the Kilala database or has been rotated by the cardholder. Do not honor mandatory discount privileges for this scan.")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                                    .font(.kilala(.subheadline))
+                                    .foregroundColor(.kilalaInkSecondary)
                                     .multilineTextAlignment(.center)
                             }
                             .padding(20)
                             .frame(maxWidth: .infinity)
-                            .background(Color(.secondarySystemBackground))
+                            .background(Color.kilalaMint)
                             .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.kilalaStateInvalid.opacity(0.30), lineWidth: 1)
+                            )
                         }
                         
                         Button(action: onDismiss) {
                             Text(result.isValid ? "Scan Next Customer" : "Dismiss & Scan Again")
-                                .font(.headline)
+                                .font(.kilala(.headline, weight: .bold))
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(result.isValid ? Color(.tertiarySystemFill) : themeColor)
-                                .foregroundColor(result.isValid ? .primary : .white)
+                                .background(result.isValid ? Color.kilalaMint : themeColor)
+                                .foregroundColor(result.isValid ? .kilalaInk : bannerForegroundColor)
                                 .cornerRadius(12)
                         }
                         .padding(.top, 4)
@@ -218,26 +292,31 @@ struct ScanResultSheet: View {
                 
                 // Loading Overlay
                 if isRecordingTransaction {
-                    Color.black.opacity(0.35)
+                    Color.kilalaInk.opacity(0.35)
                         .ignoresSafeArea()
                     
                     VStack(spacing: 14) {
                         ProgressView()
+                            .tint(.kilalaGreen)
                             .scaleEffect(1.3)
                         Text("Recording Transaction...")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.kilala(.subheadline, weight: .semibold))
+                            .foregroundColor(.kilalaInk)
                     }
                     .padding(24)
-                    .background(.regularMaterial)
+                    .background(Color.kilalaPaper)
                     .cornerRadius(16)
-                    .shadow(radius: 10)
+                    .shadow(color: Color.kilalaInk.opacity(0.16), radius: 10)
                 }
             }
             .navigationTitle("Verification Result")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.kilalaPaper, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done", action: onDismiss)
+                        .font(.kilala(.subheadline, weight: .semibold))
+                        .foregroundColor(.kilalaGreen)
                         .disabled(isRecordingTransaction)
                 }
             }
@@ -313,7 +392,7 @@ private struct CardholderAvatarView: View {
             }
         }
         .frame(width: 72, height: 72)
-        .background(Color(.tertiarySystemBackground))
+        .background(Color.white)
         .clipShape(Circle())
         .overlay(
             Circle()
@@ -325,7 +404,7 @@ private struct CardholderAvatarView: View {
         Image(systemName: "person.crop.circle.fill")
             .resizable()
             .scaledToFit()
-            .foregroundColor(.secondary)
+            .foregroundColor(.kilalaInkMuted)
             .padding(6)
     }
 }
@@ -333,16 +412,17 @@ private struct CardholderAvatarView: View {
 private struct DetailRow: View {
     let label: String
     let value: String
-    var valueColor: Color = .primary
+    var valueColor: Color = .kilalaInk
+    var isMonospaced: Bool = false
     
     var body: some View {
         HStack {
             Text(label)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(.kilala(.subheadline))
+                .foregroundColor(.kilalaInkSecondary)
             Spacer()
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(isMonospaced ? .kilalaMono(.subheadline, weight: .semibold) : .kilala(.subheadline, weight: .semibold))
                 .foregroundColor(valueColor)
         }
     }

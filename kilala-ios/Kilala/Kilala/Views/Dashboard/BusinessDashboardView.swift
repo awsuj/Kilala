@@ -88,7 +88,8 @@ struct BusinessDashboardView: View {
                 case .transactions:
                     NavigationStack {
                         BusinessTransactionHistoryView(
-                            onLogout: onLogout
+                            onLogout: onLogout,
+                            showBrandLogo: true
                         )
                     }
 
@@ -118,7 +119,7 @@ struct BusinessDashboardView: View {
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
         }
-        .tint(.black)
+        .tint(.kilalaGreen)
         .onAppear {
             if !token.isEmpty {
                 APIService.shared.authToken = token
@@ -151,12 +152,12 @@ struct BusinessDashboardView: View {
                         Button("Close") {
                             isScannerPresented = false
                         }
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.black)
+                        .font(.kilala(.subheadline, weight: .semibold))
+                        .foregroundColor(.kilalaInk)
                     }
                 }
             }
+            .tint(.kilalaGreen)
         }
     }
 
@@ -204,13 +205,10 @@ private struct BusinessHomeView: View {
 
     @State private var selectedTransaction: TransactionHistoryItem? = nil
 
-    private static let darkGreenText = Color(red: 0.09, green: 0.48, blue: 0.22)
-    private static let darkRedText = Color(red: 0.72, green: 0.14, blue: 0.14)
-
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.white
+                Color.kilalaPaper
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -232,19 +230,13 @@ private struct BusinessHomeView: View {
                 .refreshable {
                     await onRefresh()
                 }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    BusinessPortalHeader(title: "Dashboard", onLogout: onLogout)
+                }
             }
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if let onLogout = onLogout {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Logout", action: onLogout)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.black)
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $selectedTransaction) { item in
                 TransactionDetailSheet(transaction: item)
                     .presentationDetents([.medium, .large])
@@ -261,15 +253,13 @@ private struct BusinessHomeView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text((businessProfile?.lguName ?? "Performance Overview").uppercased())
-                        .font(.caption)
-                        .fontWeight(.bold)
+                        .font(.kilala(.caption, weight: .bold))
                         .tracking(0.8)
-                        .foregroundColor(.gray)
+                        .foregroundColor(.kilalaInkSecondary)
 
                     Text(businessProfile?.businessName ?? "Business Analytics")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.black)
+                        .font(.kilala(.title3, weight: .bold))
+                        .foregroundColor(.kilalaInk)
                 }
 
                 Spacer(minLength: 8)
@@ -292,8 +282,8 @@ private struct BusinessHomeView: View {
                     value: String(format: "₱%.2f", totalDiscountedAmount),
                     subtitle: "Net revenue collected after 20% discount (\(selectedTimeframe.title.lowercased()))",
                     badgeText: "\(transactionCount) Verified",
-                    badgeFill: Color.green.opacity(0.15),
-                    badgeForeground: Self.darkGreenText,
+                    badgeFill: Color.kilalaStateValid.opacity(0.15),
+                    badgeForeground: .kilalaStateValid,
                     isLoading: isLoading
                 )
 
@@ -302,35 +292,34 @@ private struct BusinessHomeView: View {
                     value: String(format: "₱%.2f", totalDiscountedSales),
                     subtitle: "20% statutory discount granted across verified scans",
                     badgeText: String(format: "Gross ₱%.2f", totalOriginalAmount),
-                    badgeFill: Color(white: 0.93),
-                    badgeForeground: Color(white: 0.30),
+                    badgeFill: Color.kilalaMint,
+                    badgeForeground: .kilalaInkSecondary,
                     isLoading: isLoading
                 )
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.96))
+        .background(Color.kilalaMint)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
     }
 
     private var accreditationBadge: some View {
         let isAccredited = businessProfile?.isAccredited ?? true
         return Text(isAccredited ? "Accredited" : "Inactive")
-            .font(.caption)
-            .fontWeight(.semibold)
+            .font(.kilala(.caption, weight: .bold))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
                 isAccredited
-                    ? Color.green.opacity(0.15)
-                    : Color.red.opacity(0.15)
+                    ? Color.kilalaStateValid.opacity(0.15)
+                    : Color.kilalaStateInvalid.opacity(0.15)
             )
-            .foregroundColor(isAccredited ? Self.darkGreenText : Self.darkRedText)
+            .foregroundColor(isAccredited ? .kilalaStateValid : .kilalaStateInvalid)
             .clipShape(Capsule())
     }
 
@@ -340,10 +329,9 @@ private struct BusinessHomeView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center) {
                 Text("RECENT ACTIVITY")
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.kilala(.caption, weight: .bold))
                     .tracking(0.8)
-                    .foregroundColor(.gray)
+                    .foregroundColor(.kilalaInkSecondary)
 
                 Spacer()
 
@@ -353,8 +341,8 @@ private struct BusinessHomeView: View {
                         Image(systemName: "chevron.right")
                             .font(.caption2.weight(.bold))
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(Color(white: 0.25))
+                    .font(.kilala(.caption, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
                 }
             }
 
@@ -362,6 +350,7 @@ private struct BusinessHomeView: View {
                 HStack {
                     Spacer()
                     ProgressView()
+                        .tint(.kilalaGreen)
                         .padding(.vertical, 24)
                     Spacer()
                 }
@@ -369,17 +358,16 @@ private struct BusinessHomeView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "receipt")
                         .font(.title2)
-                        .foregroundColor(.gray)
+                        .foregroundColor(.kilalaGreen.opacity(0.7))
 
                     Text("No transactions in the \(selectedTimeframe.title.lowercased()).")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.black)
+                        .font(.kilala(.subheadline, weight: .bold))
+                        .foregroundColor(.kilalaInk)
                         .multilineTextAlignment(.center)
 
                     Text("Tap Scan QR in the bottom right to verify a Kilala ID.")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                        .font(.kilala(.caption))
+                        .foregroundColor(.kilalaInkSecondary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
@@ -389,9 +377,9 @@ private struct BusinessHomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+                .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
             } else {
                 VStack(spacing: 10) {
                     ForEach(recentTransactions.prefix(5)) { item in
@@ -407,11 +395,11 @@ private struct BusinessHomeView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.96))
+        .background(Color.kilalaMint)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
     }
 
@@ -421,12 +409,11 @@ private struct BusinessHomeView: View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.circle")
                 .font(.body.weight(.semibold))
-                .foregroundColor(Self.darkRedText)
+                .foregroundColor(.kilalaStateInvalid)
 
             Text(message)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(Color(white: 0.30))
+                .font(.kilala(.caption, weight: .medium))
+                .foregroundColor(.kilalaInk)
 
             Spacer()
 
@@ -435,19 +422,19 @@ private struct BusinessHomeView: View {
                     await onRefresh()
                 }
             }
-            .font(.caption.weight(.bold))
+            .font(.kilala(.caption, weight: .bold))
             .foregroundColor(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Color(white: 0.25))
+            .background(Color.kilalaGreen)
             .clipShape(Capsule())
         }
         .padding(14)
-        .background(Color(white: 0.96))
+        .background(Color.kilalaMint)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.kilalaStateInvalid.opacity(0.30), lineWidth: 1)
         )
     }
 }
@@ -467,16 +454,14 @@ private struct MetricSubCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
                 Text(label)
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.kilala(.caption, weight: .bold))
                     .tracking(0.8)
-                    .foregroundColor(.gray)
+                    .foregroundColor(.kilalaInkSecondary)
 
                 Spacer(minLength: 4)
 
                 Text(badgeText)
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.kilala(.caption, weight: .bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(badgeFill)
@@ -486,19 +471,20 @@ private struct MetricSubCard: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundColor(.black)
+                    .font(.kilala(size: 30, weight: .bold, relativeTo: .largeTitle))
+                    .foregroundColor(.kilalaInk)
                     .contentTransition(.numericText())
 
                 if isLoading {
                     ProgressView()
+                        .tint(.kilalaGreen)
                         .scaleEffect(0.8)
                 }
             }
 
             Text(subtitle)
-                .font(.footnote)
-                .foregroundColor(Color(white: 0.35))
+                .font(.kilala(.footnote))
+                .foregroundColor(.kilalaInkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
@@ -507,9 +493,9 @@ private struct MetricSubCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+        .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -540,16 +526,16 @@ private struct BusinessSplitBottomBar: View {
                                 .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
 
                             Text(tab.title)
-                                .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                                .font(.kilala(size: 10, weight: isSelected ? .bold : .medium, relativeTo: .caption2))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
                         }
-                        .foregroundColor(isSelected ? .black : Color(white: 0.35))
+                        .foregroundColor(isSelected ? .kilalaInk : .kilalaInkSecondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background {
                             if isSelected {
                                 Capsule()
-                                    .fill(Color(white: 0.92))
+                                    .fill(Color.kilalaMint)
                                     .matchedGeometryEffect(id: "activeTabHighlight", in: activeTabNamespace)
                             }
                         }
@@ -567,9 +553,9 @@ private struct BusinessSplitBottomBar: View {
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.10), radius: 14, x: 0, y: 6)
+            .shadow(color: Color.kilalaInk.opacity(0.10), radius: 14, x: 0, y: 6)
 
             // Right Component: Detached Circular Scan QR Button
             Button(action: onScanQR) {
@@ -577,9 +563,13 @@ private struct BusinessSplitBottomBar: View {
                     .font(.system(size: 23, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: barHeight, height: barHeight)
-                    .background(Color.black)
+                    .background(Color.kilalaGreen)
                     .clipShape(Circle())
-                    .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 6)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.kilalaSunrise.opacity(0.45), lineWidth: 1.5)
+                    )
+                    .shadow(color: Color.kilalaGreen.opacity(0.30), radius: 14, x: 0, y: 6)
             }
             .buttonStyle(TactileScaleButtonStyle())
             .accessibilityLabel("Scan QR")

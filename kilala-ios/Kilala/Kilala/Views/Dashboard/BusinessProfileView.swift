@@ -37,9 +37,6 @@ struct BusinessProfileView: View {
     @State private var showErrorAlert: Bool = false
     @State private var errorMessage: String = ""
 
-    private static let darkGreenText = Color(red: 0.09, green: 0.48, blue: 0.22)
-    private static let darkRedText = Color(red: 0.72, green: 0.14, blue: 0.14)
-
     private static let validCategories: [String] = [
         "PHARMACY",
         "RESTAURANT",
@@ -87,7 +84,7 @@ struct BusinessProfileView: View {
 
     var body: some View {
         ZStack {
-            Color.white
+            Color.kilalaPaper
                 .ignoresSafeArea()
 
             ScrollView {
@@ -108,19 +105,13 @@ struct BusinessProfileView: View {
                     await loadCurrentProfile()
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                BusinessPortalHeader(title: "Profile", onLogout: onLogout)
+            }
         }
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if let onLogout = onLogout {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Logout", action: onLogout)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.black)
-                }
-            }
-        }
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             await loadCurrentProfile()
         }
@@ -140,18 +131,17 @@ struct BusinessProfileView: View {
 
     private var profileDetailsCard: some View {
         VStack(spacing: 18) {
-            // Soft Pastel Accreditation Status Pill
+            // Accreditation Status Pill
             Text(isAccredited ? "Accredited" : "Inactive")
-                .font(.caption)
-                .fontWeight(.semibold)
+                .font(.kilala(.caption, weight: .bold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
                 .background(
                     isAccredited
-                        ? Color.green.opacity(0.15)
-                        : Color.red.opacity(0.15)
+                        ? Color.kilalaStateValid.opacity(0.15)
+                        : Color.kilalaStateInvalid.opacity(0.15)
                 )
-                .foregroundColor(isAccredited ? Self.darkGreenText : Self.darkRedText)
+                .foregroundColor(isAccredited ? .kilalaStateValid : .kilalaStateInvalid)
                 .clipShape(Capsule())
 
             // Business Name Hero Header (Centered)
@@ -159,14 +149,13 @@ struct BusinessProfileView: View {
                 centeredLabel("BUSINESS NAME", locked: isEditing)
 
                 Text(businessName.isEmpty ? "Business Profile" : businessName)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.black)
+                    .font(.kilala(.title2, weight: .bold))
+                    .foregroundColor(.kilalaInk)
                     .multilineTextAlignment(.center)
             }
 
             Divider()
-                .overlay(Color.gray.opacity(0.20))
+                .overlay(Color.kilalaMintBorder)
 
             // Editable Business Details (Read-only centered values by default, centered white inputs in edit mode)
             VStack(spacing: 16) {
@@ -206,7 +195,7 @@ struct BusinessProfileView: View {
             }
 
             Divider()
-                .overlay(Color.gray.opacity(0.20))
+                .overlay(Color.kilalaMintBorder)
 
             // Legal & Account Identifiers (Always centered & read-only)
             VStack(spacing: 16) {
@@ -241,8 +230,8 @@ struct BusinessProfileView: View {
 
             if isEditing {
                 Text("Legal identifiers are verified by your Issuing LGU and cannot be modified.")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                    .font(.kilala(.caption))
+                    .foregroundColor(.kilalaInkSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.top, 4)
             }
@@ -250,11 +239,11 @@ struct BusinessProfileView: View {
         .padding(.vertical, 26)
         .padding(.horizontal, 22)
         .frame(maxWidth: .infinity)
-        .background(Color(white: 0.96))
+        .background(Color.kilalaMint)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
         .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
@@ -275,29 +264,29 @@ struct BusinessProfileView: View {
                                 Text("Save Changes")
                             }
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(.kilala(.subheadline, weight: .bold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(canSaveChanges ? Color.black : Color.gray.opacity(0.45))
+                        .background(canSaveChanges ? Color.kilalaGreen : Color.kilalaInkMuted)
                         .clipShape(Capsule())
-                        .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
+                        .shadow(color: Color.kilalaGreen.opacity(0.18), radius: 10, x: 0, y: 4)
                     }
                     .disabled(!canSaveChanges)
 
                     Button(action: cancelEditing) {
                         Text("Cancel")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.black)
+                            .font(.kilala(.subheadline, weight: .semibold))
+                            .foregroundColor(.kilalaInk)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(Color.white)
                             .clipShape(Capsule())
                             .overlay(
                                 Capsule()
-                                    .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
                             )
-                            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+                            .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
                     }
                     .disabled(isSaving)
                 }
@@ -306,19 +295,16 @@ struct BusinessProfileView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "pencil")
                             .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.kilalaSunrise)
                         Text("Update details")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.kilala(.subheadline, weight: .bold))
+                            .foregroundColor(.white)
                     }
-                    .foregroundColor(.black)
                     .padding(.horizontal, 30)
                     .padding(.vertical, 14)
-                    .background(Color.white)
+                    .background(Color.kilalaGreen)
                     .clipShape(Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+                    .shadow(color: Color.kilalaGreen.opacity(0.22), radius: 10, x: 0, y: 4)
                 }
                 .disabled(isLoadingProfile)
             }
@@ -330,17 +316,18 @@ struct BusinessProfileView: View {
     private var loadingCard: some View {
         VStack(spacing: 12) {
             ProgressView()
+                .tint(.kilalaGreen)
             Text("Loading business profile...")
-                .font(.subheadline)
-                .foregroundColor(.gray)
+                .font(.kilala(.subheadline))
+                .foregroundColor(.kilalaInkSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-        .background(Color(white: 0.96))
+        .background(Color.kilalaMint)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
     }
 
@@ -349,15 +336,14 @@ struct BusinessProfileView: View {
     private func centeredLabel(_ title: String, locked: Bool = false) -> some View {
         HStack(spacing: 4) {
             Text(title)
-                .font(.caption)
-                .fontWeight(.bold)
+                .font(.kilala(.caption, weight: .bold))
                 .tracking(0.8)
-                .foregroundColor(.gray)
+                .foregroundColor(.kilalaInkSecondary)
 
             if locked {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
-                    .foregroundColor(.gray.opacity(0.8))
+                    .foregroundColor(.kilalaInkMuted)
             }
         }
     }
@@ -372,8 +358,8 @@ struct BusinessProfileView: View {
             centeredLabel(label, locked: locked)
 
             Text(value)
-                .font(monospaced ? .system(.subheadline, design: .monospaced).weight(.semibold) : .subheadline.weight(.semibold))
-                .foregroundColor(locked ? Color(white: 0.38) : .black)
+                .font(monospaced ? .kilalaMono(.subheadline, weight: .semibold) : .kilala(.subheadline, weight: .semibold))
+                .foregroundColor(locked ? .kilalaInkSecondary : .kilalaInk)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -397,8 +383,8 @@ struct BusinessProfileView: View {
                     TextField(placeholder, text: text)
                 }
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundColor(.black)
+            .font(.kilala(.subheadline, weight: .semibold))
+            .foregroundColor(.kilalaInk)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -407,9 +393,9 @@ struct BusinessProfileView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.gray.opacity(0.28), lineWidth: 1)
+                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .shadow(color: Color.kilalaInk.opacity(0.04), radius: 6, x: 0, y: 2)
         }
         .frame(maxWidth: .infinity)
     }
@@ -435,11 +421,11 @@ struct BusinessProfileView: View {
                 HStack(spacing: 6) {
                     Spacer(minLength: 16)
                     Text(formatCategory(draftCategory))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.black)
+                        .font(.kilala(.subheadline, weight: .semibold))
+                        .foregroundColor(.kilalaInk)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.kilalaInkSecondary)
                     Spacer(minLength: 16)
                 }
                 .padding(.horizontal, 14)
@@ -449,9 +435,9 @@ struct BusinessProfileView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.gray.opacity(0.28), lineWidth: 1)
+                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+                .shadow(color: Color.kilalaInk.opacity(0.04), radius: 6, x: 0, y: 2)
             }
         }
         .frame(maxWidth: .infinity)

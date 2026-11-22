@@ -78,11 +78,11 @@ struct QRScannerView: View {
             VStack(spacing: 20) {
                 VStack(spacing: 6) {
                     Text("Scan Kilala Digital ID")
-                        .font(.title3.bold())
+                        .font(.kilala(.title3, weight: .bold))
                         .foregroundColor(.white)
                     
                     Text("Align the cardholder's QR code within the frame")
-                        .font(.subheadline)
+                        .font(.kilala(.subheadline))
                         .foregroundColor(.white.opacity(0.85))
                         .multilineTextAlignment(.center)
                 }
@@ -98,19 +98,19 @@ struct QRScannerView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 24)
                         .strokeBorder(
-                            isVerifying ? Color.yellow : Color.white,
+                            isVerifying ? Color.kilalaSunrise : Color.white,
                             style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [30, 15])
                         )
                         .frame(width: 240, height: 240)
-                        .background(Color.black.opacity(0.15).cornerRadius(24))
+                        .background(Color.kilalaInk.opacity(0.20).cornerRadius(24))
                     
                     if isVerifying {
                         VStack(spacing: 12) {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(CircularProgressViewStyle(tint: .kilalaSunrise))
                                 .scaleEffect(1.3)
                             Text("Verifying ID...")
-                                .font(.callout.weight(.semibold))
+                                .font(.kilala(.callout, weight: .semibold))
                                 .foregroundColor(.white)
                         }
                         .padding(20)
@@ -121,11 +121,11 @@ struct QRScannerView: View {
                 
                 if let errorMessage = errorMessage {
                     Text(errorMessage)
-                        .font(.footnote.weight(.medium))
+                        .font(.kilala(.footnote, weight: .medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.red.opacity(0.9))
+                        .background(Color.kilalaStateInvalid.opacity(0.95))
                         .cornerRadius(10)
                         .padding(.horizontal)
                 }
@@ -137,9 +137,9 @@ struct QRScannerView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "clock.arrow.circlepath")
                             Text("View Transaction History")
-                                .fontWeight(.semibold)
+                                .font(.kilala(.subheadline, weight: .semibold))
                         }
-                        .font(.subheadline)
+                        .font(.kilala(.subheadline))
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
@@ -153,15 +153,15 @@ struct QRScannerView: View {
                 // Simulator Fallback for testing without a physical camera
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Simulator Debug Input", systemImage: "hammer.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(.secondary)
+                        .font(.kilala(.caption, weight: .bold))
+                        .foregroundColor(.kilalaInkSecondary)
                     
                     HStack(spacing: 10) {
                         TextField("Paste QR token (e.g. KILALA-QR-...)", text: $manualQRToken)
                             .textFieldStyle(.roundedBorder)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .font(.system(.subheadline, design: .monospaced))
+                            .font(.kilalaMono(.subheadline, weight: .medium))
                         
                         Button {
                             let trimmed = manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,10 +169,10 @@ struct QRScannerView: View {
                             verifyQRToken(trimmed)
                         } label: {
                             Text("Verify")
-                                .fontWeight(.semibold)
+                                .font(.kilala(.subheadline, weight: .semibold))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
-                                .background(Color.blue)
+                                .background(Color.kilalaGreen)
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                         }
