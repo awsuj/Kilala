@@ -93,3 +93,5 @@ struct BusinessDashboardSummary: Codable {
     let transactionCount: Int?
     let transactions: [TransactionHistoryItem]?
 }
+
+typealias CardholderTransaction = CardholderTransactionHistoryItem
