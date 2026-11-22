@@ -19,7 +19,7 @@ app.use(express.json());
 interface JwtPayload {
   id: string;
   email: string;
-  role: 'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS';
+  role: 'LGU_ADMIN' | 'CARDHOLDER' | 'BUSINESS' | 'SUPERADMIN';
   business_id?: string;
 }
 
