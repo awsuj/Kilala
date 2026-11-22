@@ -24,7 +24,7 @@ struct ContentView: View {
                     APIService.shared.currentBusinessProfile = nil
                     self.session = nil
                 }
-            case .lguAdmin:
+            case .lguAdmin, .superAdmin:
                 VStack(spacing: 16) {
                     Text("Please use the Kilala Web Portal for LGU Admin access.")
                         .multilineTextAlignment(.center)

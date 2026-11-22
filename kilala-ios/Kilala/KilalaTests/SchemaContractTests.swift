@@ -50,7 +50,8 @@ struct SchemaContractTests {
         let schemaRoles = try SchemaFile.enumValues("user_role")
         let appRoles: Set<String> = [UserRole.cardholder.rawValue,
                                      UserRole.business.rawValue,
-                                     UserRole.lguAdmin.rawValue]
+                                     UserRole.lguAdmin.rawValue,
+                                     UserRole.superAdmin.rawValue]
         #expect(!schemaRoles.isEmpty)
         #expect(appRoles == schemaRoles)
     }
