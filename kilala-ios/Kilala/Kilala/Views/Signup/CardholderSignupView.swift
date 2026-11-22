@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct CardholderSignupView: View {
+    var onRegistrationSuccess: ((LoginResponse) -> Void)? = nil
+
     @State private var privilegeType: PrivilegeType = .pwd
     @State private var cardIdNumber: String = ""
     @State private var firstName: String = ""
@@ -20,6 +22,7 @@ struct CardholderSignupView: View {
     @State private var errorMessage: String? = nil
     @State private var verifiedProfile: SignupVerificationResponse? = nil
     @State private var isVerified: Bool = false
+    @State private var navigateToCreateAccount: Bool = false
     
     enum PrivilegeType: String {
         case pwd = "PWD"
@@ -27,154 +30,202 @@ struct CardholderSignupView: View {
     }
     
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-                // header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Register Account")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.black)
-                        .padding(.bottom, 4)
-                    
-                    Divider()
-                        .background(Color.gray)
-                        .padding(.bottom, 8)
-                    
-                    Text("Match your LGU record")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.gray)
-                }
-                .padding(.top, 16)
-                
-                // id type selection
-                VStack(alignment: .center, spacing: 16) {
-                    Text("Select your ID type")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    
-                    HStack(spacing: 20) {
-                        OptionCardView(
-                            title: "PWD",
-                            icon: "figure.roll",
-                            isSelected: privilegeType == .pwd
-                        ) {
-                            privilegeType = .pwd
-                        }
+        ZStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 24) {
+                    // header
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Register Account")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundColor(.black)
+                            .padding(.bottom, 4)
                         
-                        OptionCardView(
-                            title: "Senior Citizen",
-                            icon: "figure.walk",
-                            isSelected: privilegeType == .seniorCitizen
-                        ) {
-                            privilegeType = .seniorCitizen
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 10)
-                }
-                .frame(maxWidth: .infinity)
-                
-                // names
-                // first name
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("First Name")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                    CustomTextField(text: $firstName)
-                }
-                // middle name
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Middle Name")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                    CustomTextField(text: $middleName)
-                }
-                // last name
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Last Name")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                    CustomTextField(text: $lastName)
-                }
-                
-                // card number
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Physical Card Number")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                    CustomTextField(text: $cardIdNumber)
-                }
-                
-                // date of birth
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Date of Birth")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                    HStack {
-                        DatePicker("Select date", selection: $dateOfBirth, displayedComponents: .date)
-                            .datePickerStyle(.compact)
-                            .labelsHidden()
-                            .environment(\.locale, Locale(identifier: "en_PH"))
-                        Spacer()
-                        Image(systemName: "calendar")
+                        Divider()
+                            .background(Color.gray)
+                            .padding(.bottom, 8)
+                        
+                        Text("Match your LGU record")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
                             .foregroundColor(.gray)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 8)
-                    .background(Color(white: 0.92))
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.6), lineWidth: 1)
-                    )
+                    .padding(.top, 16)
+                    
+                    // id type selection
+                    VStack(alignment: .center, spacing: 16) {
+                        Text("Select your ID type")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        
+                        HStack(spacing: 20) {
+                            OptionCardView(
+                                title: "PWD",
+                                icon: "figure.roll",
+                                isSelected: privilegeType == .pwd
+                            ) {
+                                privilegeType = .pwd
+                            }
+                            
+                            OptionCardView(
+                                title: "Senior Citizen",
+                                icon: "figure.walk",
+                                isSelected: privilegeType == .seniorCitizen
+                            ) {
+                                privilegeType = .seniorCitizen
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    // names
+                    // first name
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("First Name")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                        CustomTextField(text: $firstName)
+                    }
+                    // middle name
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Middle Name")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                        CustomTextField(text: $middleName)
+                    }
+                    // last name
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Last Name")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                        CustomTextField(text: $lastName)
+                    }
+                    
+                    // card number
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Physical Card Number")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                        CustomTextField(text: $cardIdNumber)
+                    }
+                    
+                    // date of birth
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Date of Birth")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                        HStack {
+                            DatePicker("Select date", selection: $dateOfBirth, displayedComponents: .date)
+                                .datePickerStyle(.compact)
+                                .labelsHidden()
+                                .environment(\.locale, Locale(identifier: "en_PH"))
+                            Spacer()
+                            Image(systemName: "calendar")
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 8)
+                        .background(Color(white: 0.92))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.6), lineWidth: 1)
+                        )
+                    }
+                    
+                    if let errorMessage = errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    
+                    // submit
+                    Button(action: handleVerifyRecord) {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(white: 0.25))
+                                .cornerRadius(8)
+                        } else {
+                            Text("Verify Record")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(white: 0.25))
+                                .cornerRadius(8)
+                        }
+                    }
+                    .disabled(isLoading)
+                    .padding(.top, 10)
+                    .padding(.bottom, 40)
                 }
-                
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundColor(.red)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-                
-                if isVerified, let profile = verifiedProfile {
-                    Text("Verified: \(profile.firstName) \(profile.lastName)!")
-                        .font(.footnote)
-                        .fontWeight(.semibold)
+                .padding(.horizontal, 20)
+            }
+
+            if isVerified, let profile = verifiedProfile {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 48, height: 48)
                         .foregroundColor(.green)
+
+                    Text("Record found!")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.black)
+
+                    Text([profile.firstName, profile.middleName, profile.lastName]
+                        .compactMap { $0 }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " "))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-                
-                // submit
-                Button(action: handleVerifyRecord) {
-                    if isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color(white: 0.25))
-                            .cornerRadius(8)
-                    } else {
-                        Text("Verify Record")
+
+                    Button(action: {
+                        isVerified = false
+                        navigateToCreateAccount = true
+                    }) {
+                        Text("Proceed")
                             .font(.subheadline)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, 14)
                             .background(Color(white: 0.25))
                             .cornerRadius(8)
                     }
+                    .padding(.top, 4)
                 }
-                .disabled(isLoading)
-                .padding(.top, 10)
-                .padding(.bottom, 40)
+                .padding(24)
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: Color.black.opacity(0.2), radius: 12, x: 0, y: 4)
+                .padding(.horizontal, 32)
             }
-            .padding(.horizontal, 20)
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $navigateToCreateAccount) {
+            if let profile = verifiedProfile {
+                CreateAccountView(
+                    profileId: profile.profileId,
+                    onRegistrationSuccess: onRegistrationSuccess
+                )
+            }
+        }
     }
     
     private func handleVerifyRecord() {

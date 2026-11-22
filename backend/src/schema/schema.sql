@@ -154,3 +154,14 @@ CREATE TABLE transactions (
 
 CREATE INDEX idx_transactions_business_created_at ON transactions(business_id, created_at DESC);
 
+-- 6. OTP Verifications (Email OTP Verification for Cardholder Registration)
+CREATE TABLE otp_verifications (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    otp VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    verified BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX idx_otp_verifications_email ON otp_verifications(email);
+

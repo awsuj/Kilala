@@ -46,7 +46,7 @@ struct LoginView: View {
                 .disabled(isLoading || email.isEmpty || password.isEmpty)
                 
                 NavigationLink {
-                    CardholderSignupView()
+                    CardholderSignupView(onRegistrationSuccess: onLoginSuccess)
                 } label: {
                     Text("Create new account")
                         .font(.subheadline)
