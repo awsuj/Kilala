@@ -45,6 +45,10 @@
 			exceptions = (
 				CB019CB53088DD0300FDF2AE /* Exceptions for "Kilala" folder in "Kilala" target */,
 			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
 			path = Kilala;
 			sourceTree = "<group>";
 		};
