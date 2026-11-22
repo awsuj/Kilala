@@ -39,9 +39,31 @@ struct TransactionHistoryItem: Codable, Identifiable {
     let lastName: String?
     let lguIdNumber: String?
     let privilegeType: String?
+    let lguName: String?
+    let status: String?
     let originalAmount: Double
     let discountedAmount: Double
     let createdAt: String
+
+    var discountAmount: Double {
+        max(0, originalAmount - discountedAmount)
+    }
+
+    var formattedPrivilegeType: String {
+        guard let privilegeType, !privilegeType.isEmpty else {
+            return "Privilege Cardholder"
+        }
+        switch privilegeType.uppercased() {
+        case "PWD":
+            return "PWD"
+        case "SENIOR_CITIZEN":
+            return "Senior Citizen"
+        default:
+            return privilegeType
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+    }
 }
 
 enum DashboardTimeframe: String, CaseIterable, Identifiable {
