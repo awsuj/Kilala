@@ -198,7 +198,7 @@ struct CreateAccountView: View {
             set: { if !$0 { standaloneSession = nil } }
         )) {
             if let session = standaloneSession {
-                DigitalIDView(token: session.token) {
+                CardholderDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
                     standaloneSession = nil
                 }
