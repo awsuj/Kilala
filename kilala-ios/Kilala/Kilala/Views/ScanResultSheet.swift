@@ -104,31 +104,32 @@ struct ScanResultSheet: View {
                 Color.kilalaPaper
                     .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Status Banner Header
-                        VStack(spacing: 10) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 16) {
+                        // Status Banner Header (16pt radius)
+                        VStack(spacing: 8) {
                             Image(systemName: statusIconName)
-                                .font(.system(size: 56))
+                                .font(.system(size: 52))
                                 .foregroundColor(bannerIconColor)
+                                .accessibilityHidden(true)
                             
                             Text(statusTitle)
                                 .font(.kilala(.title2, weight: .bold))
-                                .tracking(1)
+                                .tracking(0.8)
                                 .foregroundColor(bannerForegroundColor)
                             
                             Text(result.message)
-                                .font(.kilala(.subheadline, weight: .medium))
+                                .font(.kilala(.callout, weight: .medium))
                                 .foregroundColor(bannerForegroundColor.opacity(0.92))
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                        .padding(.vertical, 20)
                         .padding(.horizontal, 16)
                         .background(themeColor)
-                        .cornerRadius(20)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         
-                        // Cardholder Details Card
+                        // Cardholder Details Card (Crisp White 16pt Card)
                         if let cardholder = result.cardholderSummary {
                             VStack(spacing: 16) {
                                 // Cardholder Photo & Primary Identity
@@ -142,10 +143,11 @@ struct ScanResultSheet: View {
                                         
                                         Text(cardholder.lguName.uppercased())
                                             .font(.kilala(.caption, weight: .bold))
+                                            .tracking(0.6)
                                             .foregroundColor(.kilalaInkSecondary)
                                         
                                         Text(cardholder.lguIdNumber)
-                                            .font(.kilalaMono(.subheadline, weight: .semibold))
+                                            .font(.kilalaMono(.callout, weight: .semibold))
                                             .foregroundColor(readableStateTextColor)
                                     }
                                     
@@ -156,7 +158,7 @@ struct ScanResultSheet: View {
                                     .overlay(Color.kilalaMintBorder)
                                 
                                 // Metadata Rows
-                                VStack(spacing: 10) {
+                                VStack(spacing: 12) {
                                     DetailRow(label: "LGU", value: cardholder.lguName)
                                     DetailRow(label: "ID Number", value: cardholder.lguIdNumber, isMonospaced: true)
                                     DetailRow(
@@ -171,12 +173,12 @@ struct ScanResultSheet: View {
                                     DetailRow(label: "Card Status", value: cardholder.status, valueColor: readableStateTextColor)
                                 }
                             }
-                            .padding(18)
-                            .background(Color.kilalaMint)
-                            .cornerRadius(16)
+                            .padding(16)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(themeColor.opacity(0.45), lineWidth: 1.5)
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
                             )
                             
                             // Transaction Recording Section (Valid Green State Only)
@@ -188,19 +190,21 @@ struct ScanResultSheet: View {
                                     
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text("Total Bill Amount (₱)")
-                                            .font(.kilala(.subheadline, weight: .medium))
-                                            .foregroundColor(.kilalaInkSecondary)
+                                            .font(.kilala(.subheadline, weight: .bold))
+                                            .foregroundColor(.kilalaInk)
                                         
                                         TextField("Total Bill Amount", text: $billAmountText)
                                             .keyboardType(.decimalPad)
                                             .font(.kilala(.title3, weight: .semibold))
                                             .foregroundColor(.kilalaInk)
-                                            .padding(12)
-                                            .background(Color.white)
-                                            .cornerRadius(10)
+                                            .tint(.kilalaGreen)
+                                            .padding(.horizontal, 12)
+                                            .frame(minHeight: 50)
+                                            .background(Color.kilalaPaper.opacity(0.6))
+                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                             .overlay(
-                                                RoundedRectangle(cornerRadius: 10)
-                                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                    .stroke(Color.kilalaBorder, lineWidth: 1)
                                             )
                                     }
                                     
@@ -235,27 +239,28 @@ struct ScanResultSheet: View {
                                         Text("Record Transaction")
                                             .font(.kilala(.headline, weight: .bold))
                                             .frame(maxWidth: .infinity)
-                                            .padding()
+                                            .frame(height: 52)
                                             .background(isValidBillAmount ? Color.kilalaGreen : Color.kilalaInkMuted)
                                             .foregroundColor(.white)
-                                            .cornerRadius(12)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     }
                                     .disabled(!isValidBillAmount || isRecordingTransaction)
                                 }
-                                .padding(18)
-                                .background(Color.kilalaMint)
-                                .cornerRadius(16)
+                                .padding(16)
+                                .background(Color.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.kilalaStateValid.opacity(0.35), lineWidth: 1.5)
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
                                 )
                             }
                         } else {
                             // Unrecognized / Counterfeit QR Code Fallback
-                            VStack(spacing: 10) {
+                            VStack(spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.largeTitle)
+                                    .font(.title)
                                     .foregroundColor(.kilalaStateInvalid)
+                                    .accessibilityHidden(true)
                                 
                                 Text("No Matching Cardholder Record")
                                     .font(.kilala(.headline, weight: .bold))
@@ -266,13 +271,13 @@ struct ScanResultSheet: View {
                                     .foregroundColor(.kilalaInkSecondary)
                                     .multilineTextAlignment(.center)
                             }
-                            .padding(20)
+                            .padding(16)
                             .frame(maxWidth: .infinity)
-                            .background(Color.kilalaMint)
-                            .cornerRadius(16)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.kilalaStateInvalid.opacity(0.30), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(Color.kilalaStateInvalid.opacity(0.35), lineWidth: 1)
                             )
                         }
                         
@@ -280,15 +285,19 @@ struct ScanResultSheet: View {
                             Text(result.isValid ? "Scan Next Customer" : "Dismiss & Scan Again")
                                 .font(.kilala(.headline, weight: .bold))
                                 .frame(maxWidth: .infinity)
-                                .padding()
+                                .frame(height: 52)
                                 .background(result.isValid ? Color.kilalaMint : themeColor)
-                                .foregroundColor(result.isValid ? .kilalaInk : bannerForegroundColor)
-                                .cornerRadius(12)
+                                .foregroundColor(result.isValid ? .kilalaGreen : bannerForegroundColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(result.isValid ? Color.kilalaMintBorder : Color.clear, lineWidth: 1)
+                                )
                         }
-                        .padding(.top, 4)
                     }
-                    .padding()
+                    .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 
                 // Loading Overlay
                 if isRecordingTransaction {
