@@ -27,7 +27,11 @@ test.describe('SUPERADMIN RBAC', () => {
   test('SUPERADMIN can access /dashboard/accounts and sees Accounts heading', async ({ page }) => {
     await loginWithRole(page, 'SUPERADMIN');
     await page.goto('/dashboard/accounts');
-    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
+    // Scope to the page content: the top bar also renders an "Accounts" title,
+    // so an unscoped heading locator would match two elements.
+    await expect(
+      page.getByRole('main').getByRole('heading', { name: 'Accounts' }),
+    ).toBeVisible();
   });
 
   test('LGU_ADMIN can access /dashboard and stays on dashboard', async ({ page }) => {

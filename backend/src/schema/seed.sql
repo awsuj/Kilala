@@ -119,9 +119,10 @@ VALUES
   ('VAL', 'Valenzuela', NULL, 'NCR')
 ON CONFLICT (lgu_code) DO NOTHING;
 
--- 8. Super admin (full access, not tied to a city). Mock hash for local/CI testing,
---    matching the login bypass used by the other seeded test accounts.
+-- 8. Super admin (full access, not tied to a city).
+--    Real bcrypt hash of the password 'Kilala2026' — matches the live DB account,
+--    so the same password works everywhere (no mock, no env var needed).
 INSERT INTO users (id, email, password_hash, role) VALUES
-('22222222-2222-2222-2222-2222222229a1', 'superadmin@kilala.gov.ph', '$2b$10$MockHashForTestingOnly123456789012', 'SUPERADMIN')
+('22222222-2222-2222-2222-2222222229a1', 'superadmin@kilala.gov.ph', '$2b$10$Wlqf3BaNqjppdLH0Dhb9KuLOkmtpZdgR.s0Swq38Ye3UeeymOqKQC', 'SUPERADMIN')
 ON CONFLICT (email) DO NOTHING;
 
