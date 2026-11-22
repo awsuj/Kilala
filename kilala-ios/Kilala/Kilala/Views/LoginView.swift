@@ -16,7 +16,7 @@ struct LoginView: View {
     }
 
     private var isLoginDisabled: Bool {
-        isLoading || email.isEmpty || password.isEmpty
+        isLoading || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty
     }
 
     var body: some View {
@@ -26,105 +26,97 @@ struct LoginView: View {
                     .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 28) {
-                        // Brand Header
-                        VStack(spacing: 12) {
-                            KilalaBrandLogo(iconSize: 38, wordmarkSize: 34)
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Editorial Header (No Boxed Hero Card)
+                        VStack(alignment: .leading, spacing: 12) {
+                            KilalaBrandLogo(iconSize: 28, wordmarkSize: 24)
                                 .accessibilityAddTraits(.isStaticText)
 
-                            Text("Sign in to access your Digital ID or Merchant Portal")
-                                .font(.kilala(.subheadline, weight: .medium))
-                                .foregroundColor(.kilalaInkSecondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 12)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Sign in to Kilala")
+                                    .font(.kilala(size: 28, weight: .bold, relativeTo: .title))
+                                    .foregroundColor(.kilalaInk)
+
+                                Text("Digital PWD & Senior Citizen verification")
+                                    .font(.kilala(.callout))
+                                    .foregroundColor(.kilalaInkSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        .padding(.top, 36)
+                        .padding(.top, 24)
 
-                        // Mint Form Card
-                        VStack(alignment: .leading, spacing: 18) {
-                            // Email Field
+                        // Single Flat White Form Card
+                        VStack(alignment: .leading, spacing: 16) {
+                            // Email Input
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("EMAIL")
-                                    .font(.kilala(.caption, weight: .bold))
-                                    .tracking(0.8)
-                                    .foregroundColor(.kilalaInkSecondary)
+                                Text("Email")
+                                    .font(.kilala(.subheadline, weight: .bold))
+                                    .foregroundColor(.kilalaInk)
 
-                                HStack(spacing: 10) {
-                                    Image(systemName: "envelope")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.kilalaInkMuted)
-                                        .accessibilityHidden(true)
-
-                                    TextField("Email", text: $email)
-                                        .font(.kilala(.body))
-                                        .foregroundColor(.kilalaInk)
-                                        .tint(.kilalaGreen)
-                                        .textInputAutocapitalization(.never)
-                                        .autocorrectionDisabled(true)
-                                        .keyboardType(.emailAddress)
-                                        .textContentType(.emailAddress)
-                                        .submitLabel(.next)
-                                        .focused($focusedField, equals: .email)
-                                        .onSubmit {
-                                            focusedField = .password
-                                        }
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: 50)
-                                .background(Color.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .stroke(
-                                            focusedField == .email ? Color.kilalaGreen : Color.kilalaMintBorder,
-                                            lineWidth: focusedField == .email ? 1.5 : 1
-                                        )
+                                TextField(
+                                    "Email",
+                                    text: $email,
+                                    prompt: Text(verbatim: "name@example.com").foregroundStyle(Color.kilalaInk.opacity(0.4))
                                 )
+                                    .font(.kilala(.body))
+                                    .foregroundColor(.kilalaInk)
+                                    .tint(.kilalaGreen)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .keyboardType(.emailAddress)
+                                    .textContentType(.emailAddress)
+                                    .submitLabel(.next)
+                                    .focused($focusedField, equals: .email)
+                                    .onSubmit {
+                                        focusedField = .password
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 48)
+                                    .background(Color.kilalaPaper.opacity(0.6))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(
+                                                focusedField == .email ? Color.kilalaGreen : Color.kilalaBorder,
+                                                lineWidth: focusedField == .email ? 1.5 : 1
+                                            )
+                                    )
                             }
 
-                            // Password Field
+                            // Password Input
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("PASSWORD")
-                                    .font(.kilala(.caption, weight: .bold))
-                                    .tracking(0.8)
-                                    .foregroundColor(.kilalaInkSecondary)
+                                Text("Password")
+                                    .font(.kilala(.subheadline, weight: .bold))
+                                    .foregroundColor(.kilalaInk)
 
-                                HStack(spacing: 10) {
-                                    Image(systemName: "lock")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.kilalaInkMuted)
-                                        .accessibilityHidden(true)
-
-                                    SecureField("Password", text: $password)
-                                        .font(.kilala(.body))
-                                        .foregroundColor(.kilalaInk)
-                                        .tint(.kilalaGreen)
-                                        .textContentType(.password)
-                                        .submitLabel(.go)
-                                        .focused($focusedField, equals: .password)
-                                        .onSubmit {
-                                            if !isLoginDisabled {
-                                                performLogin()
-                                            }
+                                SecureField("Enter your password", text: $password)
+                                    .font(.kilala(.body))
+                                    .foregroundColor(.kilalaInk)
+                                    .tint(.kilalaGreen)
+                                    .textContentType(.password)
+                                    .submitLabel(.go)
+                                    .focused($focusedField, equals: .password)
+                                    .onSubmit {
+                                        if !isLoginDisabled {
+                                            performLogin()
                                         }
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: 50)
-                                .background(Color.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .stroke(
-                                            focusedField == .password ? Color.kilalaGreen : Color.kilalaMintBorder,
-                                            lineWidth: focusedField == .password ? 1.5 : 1
-                                        )
-                                )
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 48)
+                                    .background(Color.kilalaPaper.opacity(0.6))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(
+                                                focusedField == .password ? Color.kilalaGreen : Color.kilalaBorder,
+                                                lineWidth: focusedField == .password ? 1.5 : 1
+                                            )
+                                    )
                             }
 
-                            // Error Banner (Icon + Text, never color alone)
+                            // Inline Error Banner (Icon + Label, never color alone)
                             if let errorMessage = errorMessage {
-                                HStack(alignment: .top, spacing: 10) {
+                                HStack(alignment: .top, spacing: 8) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .font(.system(size: 16, weight: .semibold))
                                         .foregroundColor(.kilalaStateInvalid)
@@ -132,141 +124,132 @@ struct LoginView: View {
                                         .accessibilityHidden(true)
 
                                     Text(errorMessage)
-                                        .font(.kilala(.footnote, weight: .semibold))
+                                        .font(.kilala(.subheadline, weight: .semibold))
                                         .foregroundColor(.kilalaStateInvalid)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(12)
-                                .background(Color.kilalaStateInvalid.opacity(0.10))
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .background(Color.kilalaStateInvalid.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                                         .stroke(Color.kilalaStateInvalid.opacity(0.30), lineWidth: 1)
                                 )
                             }
 
-                            // Primary Sign-In Button
+                            // Primary Sign In Button
                             Button(action: performLogin) {
-                                HStack(spacing: 10) {
+                                HStack(spacing: 8) {
                                     if isLoading {
                                         ProgressView()
-                                            .tint(.kilalaSunrise)
-                                    } else {
-                                        Text("Login")
+                                            .tint(.white)
+                                        Text("Signing In...")
                                             .font(.kilala(.headline, weight: .bold))
                                             .foregroundColor(.white)
-
-                                        Image(systemName: "arrow.right")
-                                            .font(.system(size: 15, weight: .bold))
-                                            .foregroundColor(.kilalaSunrise)
-                                            .accessibilityHidden(true)
+                                    } else {
+                                        Text("Sign In")
+                                            .font(.kilala(.headline, weight: .bold))
+                                            .foregroundColor(.white)
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
-                                .frame(minHeight: 54)
+                                .frame(height: 52)
                                 .background(Color.kilalaGreen)
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                .shadow(color: Color.kilalaGreen.opacity(isLoginDisabled ? 0.0 : 0.22), radius: 10, x: 0, y: 4)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
                             .disabled(isLoginDisabled)
                             .opacity(isLoginDisabled ? 0.55 : 1.0)
-                            .padding(.top, 4)
                         }
-                        .padding(22)
+                        .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.kilalaMint)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(Color.kilalaMintBorder, lineWidth: 1)
                         )
 
-                        // Registration & Account Claim Links
-                        VStack(spacing: 14) {
+                        // Understated Account Creation Section
+                        VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 12) {
-                                Rectangle()
-                                    .fill(Color.kilalaBorder)
-                                    .frame(height: 1)
+                                Divider()
+                                    .overlay(Color.kilalaBorder)
 
-                                Text("NEW TO KILALA?")
-                                    .font(.kilala(.caption, weight: .bold))
-                                    .tracking(0.8)
-                                    .foregroundColor(.kilalaInkMuted)
+                                Text("New to Kilala?")
+                                    .font(.kilala(.footnote, weight: .semibold))
+                                    .foregroundColor(.kilalaInkSecondary)
                                     .fixedSize()
 
-                                Rectangle()
-                                    .fill(Color.kilalaBorder)
-                                    .frame(height: 1)
+                                Divider()
+                                    .overlay(Color.kilalaBorder)
                             }
 
-                            VStack(spacing: 12) {
-                                NavigationLink {
-                                    CardholderSignupView(onRegistrationSuccess: onLoginSuccess)
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "person.text.rectangle")
-                                            .font(.system(size: 16, weight: .semibold))
-                                            .foregroundColor(.kilalaGreen)
-                                            .accessibilityHidden(true)
+                            NavigationLink {
+                                BusinessSignupView(onRegistrationSuccess: onLoginSuccess)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "storefront")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundColor(.kilalaGreen)
+                                        .accessibilityHidden(true)
 
-                                        Text("Create new account")
-                                            .font(.kilala(.subheadline, weight: .bold))
-                                            .foregroundColor(.kilalaInk)
+                                    Text("Register a Business")
+                                        .font(.kilala(.callout, weight: .bold))
+                                        .foregroundColor(.kilalaGreen)
 
-                                        Spacer()
+                                    Spacer()
 
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundColor(.kilalaInkMuted)
-                                            .accessibilityHidden(true)
-                                    }
-                                    .padding(.horizontal, 18)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(minHeight: 50)
-                                    .background(Color.kilalaMint)
-                                    .clipShape(Capsule())
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(Color.kilalaMintBorder, lineWidth: 1)
-                                    )
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.kilalaGreen.opacity(0.7))
+                                        .accessibilityHidden(true)
                                 }
+                                .padding(.horizontal, 16)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 50)
+                                .background(Color.kilalaMint)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                                )
+                            }
 
-                                NavigationLink {
-                                    BusinessSignupView(onRegistrationSuccess: onLoginSuccess)
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "storefront")
-                                            .font(.system(size: 16, weight: .semibold))
-                                            .foregroundColor(.kilalaGreen)
-                                            .accessibilityHidden(true)
+                            NavigationLink {
+                                CardholderSignupView(onRegistrationSuccess: onLoginSuccess)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.text.rectangle")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundColor(.kilalaGreen)
+                                        .accessibilityHidden(true)
 
-                                        Text("Register your Business")
-                                            .font(.kilala(.subheadline, weight: .bold))
-                                            .foregroundColor(.kilalaGreen)
+                                    Text("Claim Cardholder ID")
+                                        .font(.kilala(.callout, weight: .bold))
+                                        .foregroundColor(.kilalaGreen)
 
-                                        Spacer()
+                                    Spacer()
 
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundColor(.kilalaGreen.opacity(0.65))
-                                            .accessibilityHidden(true)
-                                    }
-                                    .padding(.horizontal, 18)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(minHeight: 50)
-                                    .background(Color.white)
-                                    .clipShape(Capsule())
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(Color.kilalaMintBorder, lineWidth: 1)
-                                    )
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.kilalaGreen.opacity(0.7))
+                                        .accessibilityHidden(true)
                                 }
+                                .padding(.horizontal, 16)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 50)
+                                .background(Color.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.kilalaGreen, lineWidth: 1)
+                                )
                             }
                         }
                         .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
