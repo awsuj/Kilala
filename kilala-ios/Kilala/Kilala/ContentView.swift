@@ -16,11 +16,13 @@ struct ContentView: View {
             case .cardholder:
                 CardholderDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
+                    APIService.shared.currentUserEmail = nil
                     self.session = nil
                 }
             case .business:
-                BusinessDashboardView(token: session.token) {
+                BusinessDashboardView(token: session.token, userEmail: session.user.email) {
                     APIService.shared.authToken = nil
+                    APIService.shared.currentUserEmail = nil
                     APIService.shared.currentBusinessProfile = nil
                     self.session = nil
                 }
@@ -30,6 +32,7 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                     Button("Logout") {
                         APIService.shared.authToken = nil
+                        APIService.shared.currentUserEmail = nil
                         self.session = nil
                     }
                 }

@@ -46,6 +46,7 @@ class APIService {
     private let baseURL = "https://kilala-vyn1.onrender.com/api"
     #endif
     var authToken: String?
+    var currentUserEmail: String?
     var currentBusinessProfile: BusinessProfile?
     
     private init() {} // Prevent multiple instances
@@ -76,6 +77,7 @@ class APIService {
         // Decode the successful JSON response
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         self.authToken = loginResponse.token
+        self.currentUserEmail = loginResponse.user.email
         if loginResponse.user.role == .business {
             self.currentBusinessProfile = try? await self.fetchBusinessProfile()
         } else {
@@ -200,6 +202,7 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let registrationResponse = try decoder.decode(BusinessRegistrationResponse.self, from: data)
         self.authToken = registrationResponse.token
+        self.currentUserEmail = registrationResponse.user.email
         self.currentBusinessProfile = registrationResponse.businessProfile
         return registrationResponse
     }
@@ -361,6 +364,7 @@ class APIService {
         
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         self.authToken = loginResponse.token
+        self.currentUserEmail = loginResponse.user.email
         return loginResponse
     }
 

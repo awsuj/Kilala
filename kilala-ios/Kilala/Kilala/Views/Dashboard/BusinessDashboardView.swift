@@ -9,6 +9,7 @@ import SwiftUI
 
 struct BusinessDashboardView: View {
     var token: String = APIService.shared.authToken ?? ""
+    var userEmail: String? = APIService.shared.currentUserEmail
     var onLogout: (() -> Void)? = nil
 
     enum Tab: Hashable {
@@ -65,7 +66,12 @@ struct BusinessDashboardView: View {
             .tag(Tab.home)
 
             NavigationStack {
-                BusinessTransactionHistoryView()
+                BusinessTransactionHistoryView(
+                    onScanQR: {
+                        isScannerPresented = true
+                    },
+                    onLogout: onLogout
+                )
             }
             .tabItem {
                 Label("Transactions", systemImage: "list.bullet.rectangle")
@@ -73,7 +79,14 @@ struct BusinessDashboardView: View {
             .tag(Tab.transactions)
 
             NavigationStack {
-                BusinessProfileView(profile: businessProfile) { updated in
+                BusinessProfileView(
+                    profile: businessProfile,
+                    userEmail: userEmail,
+                    onScanQR: {
+                        isScannerPresented = true
+                    },
+                    onLogout: onLogout
+                ) { updated in
                     businessProfile = updated
                 }
             }
@@ -167,6 +180,8 @@ private struct BusinessHomeView: View {
     let onRefresh: () async -> Void
     var onLogout: (() -> Void)? = nil
 
+    @State private var selectedTransaction: TransactionHistoryItem? = nil
+
     private static let darkGreenText = Color(red: 0.09, green: 0.48, blue: 0.22)
     private static let darkRedText = Color(red: 0.72, green: 0.14, blue: 0.14)
 
@@ -219,6 +234,11 @@ private struct BusinessHomeView: View {
                             .foregroundColor(.black)
                     }
                 }
+            }
+            .sheet(item: $selectedTransaction) { item in
+                TransactionDetailSheet(transaction: item)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
@@ -365,40 +385,12 @@ private struct BusinessHomeView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(recentTransactions.prefix(5)) { item in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.cardholderName)
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.black)
-
-                                Text(formatTransactionDate(item.createdAt))
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-
-                            Spacer(minLength: 8)
-
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(String(format: "₱%.2f", item.discountedAmount))
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.black)
-
-                                Text(String(format: "Orig: ₱%.2f", item.originalAmount))
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(Color(white: 0.40))
-                            }
+                        Button {
+                            selectedTransaction = item
+                        } label: {
+                            TransactionHistoryRow(item: item)
                         }
-                        .padding(14)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -447,22 +439,6 @@ private struct BusinessHomeView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.gray.opacity(0.25), lineWidth: 1)
         )
-    }
-
-    private func formatTransactionDate(_ isoString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        let fallbackFormatter = ISO8601DateFormatter()
-        fallbackFormatter.formatOptions = [.withInternetDateTime]
-
-        if let date = isoFormatter.date(from: isoString) ?? fallbackFormatter.date(from: isoString) {
-            let displayFormatter = DateFormatter()
-            displayFormatter.dateStyle = .medium
-            displayFormatter.timeStyle = .short
-            return displayFormatter.string(from: date)
-        }
-        return isoString
     }
 }
 
