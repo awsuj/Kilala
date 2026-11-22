@@ -142,7 +142,7 @@ struct KilalaBrandLogo: View {
             .frame(width: iconSize, height: iconSize)
 
             if showWordmark {
-                Text("kilala")
+                Text("Kilala")
                     .font(.kilala(size: wordmarkSize, weight: .bold, relativeTo: .headline))
                     .tracking(-0.4)
                     .foregroundColor(reversed ? .white : .kilalaInk)

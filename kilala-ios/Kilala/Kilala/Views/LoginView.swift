@@ -37,7 +37,7 @@ struct LoginView: View {
                                     .font(.kilala(size: 28, weight: .bold, relativeTo: .title))
                                     .foregroundColor(.kilalaInk)
 
-                                Text("Digital PWD & Senior Citizen verification")
+                                Text("PWD & Senior Citizen Verification System")
                                     .font(.kilala(.callout))
                                     .foregroundColor(.kilalaInkSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
