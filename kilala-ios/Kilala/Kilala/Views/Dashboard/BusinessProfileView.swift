@@ -9,7 +9,6 @@ import SwiftUI
 
 struct BusinessProfileView: View {
     var userEmail: String?
-    var onScanQR: (() -> Void)?
     var onLogout: (() -> Void)?
     var onProfileUpdated: ((BusinessProfile) -> Void)?
 
@@ -67,13 +66,11 @@ struct BusinessProfileView: View {
     init(
         profile: BusinessProfile? = APIService.shared.currentBusinessProfile,
         userEmail: String? = APIService.shared.currentUserEmail,
-        onScanQR: (() -> Void)? = nil,
         onLogout: (() -> Void)? = nil,
         onProfileUpdated: ((BusinessProfile) -> Void)? = nil
     ) {
         let currentProfile = profile ?? APIService.shared.currentBusinessProfile
         self.userEmail = userEmail
-        self.onScanQR = onScanQR
         self.onLogout = onLogout
         self.onProfileUpdated = onProfileUpdated
 
@@ -104,7 +101,7 @@ struct BusinessProfileView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
-                .padding(.bottom, 36)
+                .padding(.bottom, 112)
             }
             .refreshable {
                 if !isEditing {
@@ -115,20 +112,6 @@ struct BusinessProfileView: View {
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if let onScanQR = onScanQR {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onScanQR) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "qrcode.viewfinder")
-                            Text("Scan QR")
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.black)
-                    }
-                }
-            }
-
             if let onLogout = onLogout {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Logout", action: onLogout)

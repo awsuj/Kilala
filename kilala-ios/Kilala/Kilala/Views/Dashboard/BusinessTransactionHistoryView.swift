@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct BusinessTransactionHistoryView: View {
-    var onScanQR: (() -> Void)? = nil
     var onLogout: (() -> Void)? = nil
 
     @State private var transactions: [TransactionHistoryItem] = []
@@ -40,7 +39,7 @@ struct BusinessTransactionHistoryView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
-                .padding(.bottom, 32)
+                .padding(.bottom, 108)
             }
             .refreshable {
                 await loadTransactions()
@@ -49,20 +48,6 @@ struct BusinessTransactionHistoryView: View {
         .navigationTitle("Transactions")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if let onScanQR = onScanQR {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onScanQR) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "qrcode.viewfinder")
-                            Text("Scan QR")
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.black)
-                    }
-                }
-            }
-
             if let onLogout = onLogout {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Logout", action: onLogout)

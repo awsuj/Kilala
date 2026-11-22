@@ -12,10 +12,32 @@ struct BusinessDashboardView: View {
     var userEmail: String? = APIService.shared.currentUserEmail
     var onLogout: (() -> Void)? = nil
 
-    enum Tab: Hashable {
+    enum Tab: Hashable, CaseIterable {
         case home
         case transactions
         case profile
+
+        var title: String {
+            switch self {
+            case .home:
+                return "Home"
+            case .transactions:
+                return "Transactions"
+            case .profile:
+                return "Profile"
+            }
+        }
+
+        func iconName(isSelected: Bool) -> String {
+            switch self {
+            case .home:
+                return isSelected ? "house.fill" : "house"
+            case .transactions:
+                return "list.bullet.rectangle"
+            case .profile:
+                return isSelected ? "person.fill" : "person"
+            }
+        }
     }
 
     // MARK: - Navigation & Modal State
@@ -38,62 +60,63 @@ struct BusinessDashboardView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            BusinessHomeView(
-                businessProfile: businessProfile,
-                selectedTimeframe: $selectedTimeframe,
-                totalDiscountedAmount: totalDiscountedAmount,
-                totalDiscountedSales: totalDiscountedSales,
-                totalOriginalAmount: totalOriginalAmount,
-                transactionCount: transactionCount,
-                recentTransactions: recentTransactions,
-                isLoading: isLoading,
-                errorMessage: errorMessage,
-                onScanQR: {
-                    isScannerPresented = true
-                },
-                onSeeAllTransactions: {
-                    selectedTab = .transactions
-                },
-                onRefresh: {
-                    await loadDashboardMetrics(for: selectedTimeframe)
-                },
-                onLogout: onLogout
-            )
-            .tabItem {
-                Label("Home", systemImage: selectedTab == .home ? "house.fill" : "house")
-            }
-            .tag(Tab.home)
+        ZStack {
+            Group {
+                switch selectedTab {
+                case .home:
+                    BusinessHomeView(
+                        businessProfile: businessProfile,
+                        selectedTimeframe: $selectedTimeframe,
+                        totalDiscountedAmount: totalDiscountedAmount,
+                        totalDiscountedSales: totalDiscountedSales,
+                        totalOriginalAmount: totalOriginalAmount,
+                        transactionCount: transactionCount,
+                        recentTransactions: recentTransactions,
+                        isLoading: isLoading,
+                        errorMessage: errorMessage,
+                        onSeeAllTransactions: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                                selectedTab = .transactions
+                            }
+                        },
+                        onRefresh: {
+                            await loadDashboardMetrics(for: selectedTimeframe)
+                        },
+                        onLogout: onLogout
+                    )
 
-            NavigationStack {
-                BusinessTransactionHistoryView(
-                    onScanQR: {
-                        isScannerPresented = true
-                    },
-                    onLogout: onLogout
-                )
-            }
-            .tabItem {
-                Label("Transactions", systemImage: "list.bullet.rectangle")
-            }
-            .tag(Tab.transactions)
+                case .transactions:
+                    NavigationStack {
+                        BusinessTransactionHistoryView(
+                            onLogout: onLogout
+                        )
+                    }
 
-            NavigationStack {
-                BusinessProfileView(
-                    profile: businessProfile,
-                    userEmail: userEmail,
-                    onScanQR: {
-                        isScannerPresented = true
-                    },
-                    onLogout: onLogout
-                ) { updated in
-                    businessProfile = updated
+                case .profile:
+                    NavigationStack {
+                        BusinessProfileView(
+                            profile: businessProfile,
+                            userEmail: userEmail,
+                            onLogout: onLogout
+                        ) { updated in
+                            businessProfile = updated
+                        }
+                    }
                 }
             }
-            .tabItem {
-                Label("Profile", systemImage: selectedTab == .profile ? "person.fill" : "person")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            VStack {
+                Spacer()
+
+                BusinessSplitBottomBar(
+                    selectedTab: $selectedTab,
+                    onScanQR: {
+                        isScannerPresented = true
+                    }
+                )
             }
-            .tag(Tab.profile)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .tint(.black)
         .onAppear {
@@ -175,7 +198,6 @@ private struct BusinessHomeView: View {
     let recentTransactions: [TransactionHistoryItem]
     let isLoading: Bool
     let errorMessage: String?
-    let onScanQR: () -> Void
     let onSeeAllTransactions: () -> Void
     let onRefresh: () async -> Void
     var onLogout: (() -> Void)? = nil
@@ -205,7 +227,7 @@ private struct BusinessHomeView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 108)
                 }
                 .refreshable {
                     await onRefresh()
@@ -214,18 +236,6 @@ private struct BusinessHomeView: View {
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onScanQR) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "qrcode.viewfinder")
-                            Text("Scan QR")
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.black)
-                    }
-                }
-
                 if let onLogout = onLogout {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button("Logout", action: onLogout)
@@ -367,7 +377,7 @@ private struct BusinessHomeView: View {
                         .foregroundColor(.black)
                         .multilineTextAlignment(.center)
 
-                    Text("Tap Scan QR in the top left to verify a Kilala ID.")
+                    Text("Tap Scan QR in the bottom right to verify a Kilala ID.")
                         .font(.caption)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
@@ -500,5 +510,89 @@ private struct MetricSubCard: View {
                 .stroke(Color.gray.opacity(0.25), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+}
+
+// MARK: - Split Floating Bottom Bar
+
+private struct BusinessSplitBottomBar: View {
+    @Binding var selectedTab: BusinessDashboardView.Tab
+    let onScanQR: () -> Void
+
+    @Namespace private var activeTabNamespace
+
+    private let barHeight: CGFloat = 64
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Left Component: 3-Tab Floating Navigation Pill
+            HStack(spacing: 4) {
+                ForEach(BusinessDashboardView.Tab.allCases, id: \.self) { tab in
+                    let isSelected = selectedTab == tab
+
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                            selectedTab = tab
+                        }
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: tab.iconName(isSelected: isSelected))
+                                .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+
+                            Text(tab.title)
+                                .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
+                        .foregroundColor(isSelected ? .black : Color(white: 0.35))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background {
+                            if isSelected {
+                                Capsule()
+                                    .fill(Color(white: 0.92))
+                                    .matchedGeometryEffect(id: "activeTabHighlight", in: activeTabNamespace)
+                            }
+                        }
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(5)
+            .frame(maxWidth: .infinity)
+            .frame(height: barHeight)
+            .background(Color.white)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.10), radius: 14, x: 0, y: 6)
+
+            // Right Component: Detached Circular Scan QR Button
+            Button(action: onScanQR) {
+                Image(systemName: "qrcode.viewfinder")
+                    .font(.system(size: 23, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: barHeight, height: barHeight)
+                    .background(Color.black)
+                    .clipShape(Circle())
+                    .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 6)
+            }
+            .buttonStyle(TactileScaleButtonStyle())
+            .accessibilityLabel("Scan QR")
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
+    }
+}
+
+private struct TactileScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
