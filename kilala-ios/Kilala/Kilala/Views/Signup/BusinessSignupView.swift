@@ -314,7 +314,11 @@ struct BusinessSignupView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             VStack(alignment: .leading, spacing: 8) {
                                 fieldLabel("Email Address *")
-                                TextField("Email Address *", text: $email)
+                                TextField(
+                                    "Email Address *",
+                                    text: $email,
+                                    prompt: Text(verbatim: "name@example.com").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                )
                                     .font(.kilala(.body))
                                     .foregroundColor(.kilalaInk)
                                     .tint(.kilalaGreen)
