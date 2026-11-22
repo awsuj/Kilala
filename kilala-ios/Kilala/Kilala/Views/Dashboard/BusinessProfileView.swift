@@ -48,9 +48,8 @@ struct BusinessProfileView: View {
     ]
 
     private var resolvedEmail: String {
-        let candidate = (userEmail ?? APIService.shared.currentUserEmail ?? "")
+        (userEmail ?? APIService.shared.currentUserEmail ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return candidate
     }
 
     private var canSaveChanges: Bool {
@@ -87,26 +86,54 @@ struct BusinessProfileView: View {
             Color.kilalaPaper
                 .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 22) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Stacked Mobile Editorial Header (No Top Logout Button)
+                    BusinessPortalHeader(
+                        title: "Profile",
+                    )
+
                     if isLoadingProfile && businessName.isEmpty {
                         loadingCard
                     } else {
                         profileDetailsCard
                         actionButtonsSection
                     }
+
+                    // Relocated Full-Width Log Out Button (24pt XL section gap)
+                    if let onLogout = onLogout {
+                        Button(action: onLogout) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .accessibilityHidden(true)
+
+                                Text("Log Out")
+                                    .font(.kilala(.callout, weight: .bold))
+                            }
+                            .foregroundColor(.kilalaStateInvalid)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.kilalaStateInvalid.opacity(0.45), lineWidth: 1)
+                            )
+                        }
+                        .disabled(isSaving)
+                        .padding(.top, 8)
+                    }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 112)
+                .padding(.bottom, 96)
             }
+            .scrollDismissesKeyboard(.interactively)
             .refreshable {
                 if !isEditing {
                     await loadCurrentProfile()
                 }
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                BusinessPortalHeader(title: "Profile", onLogout: onLogout)
             }
         }
         .navigationTitle("Profile")
@@ -127,38 +154,36 @@ struct BusinessProfileView: View {
         }
     }
 
-    // MARK: - Centered Profile Card
+    // MARK: - Read-Only Identity Card
 
     private var profileDetailsCard: some View {
-        VStack(spacing: 18) {
-            // Accreditation Status Pill
-            Text(isAccredited ? "Accredited" : "Inactive")
-                .font(.kilala(.caption, weight: .bold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(
-                    isAccredited
-                        ? Color.kilalaStateValid.opacity(0.15)
-                        : Color.kilalaStateInvalid.opacity(0.15)
-                )
-                .foregroundColor(isAccredited ? .kilalaStateValid : .kilalaStateInvalid)
-                .clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 16) {
+            // Accreditation Status Badge (Icon + Text)
+            KilalaStatusBadge(
+                icon: isAccredited ? "checkmark.circle.fill" : "xmark.circle.fill",
+                label: isAccredited ? "Accredited" : "Inactive",
+                foreground: isAccredited ? .kilalaStateValid : .kilalaStateInvalid,
+                background: isAccredited
+                    ? Color.kilalaStateValid.opacity(0.12)
+                    : Color.kilalaStateInvalid.opacity(0.12),
+                cornerRadius: 8
+            )
 
-            // Business Name Hero Header (Centered)
-            VStack(spacing: 6) {
-                centeredLabel("BUSINESS NAME", locked: isEditing)
+            // Business Name
+            VStack(alignment: .leading, spacing: 4) {
+                fieldLabel("BUSINESS NAME", locked: isEditing)
 
                 Text(businessName.isEmpty ? "Business Profile" : businessName)
-                    .font(.kilala(.title2, weight: .bold))
+                    .font(.kilala(size: 22, weight: .bold, relativeTo: .title2))
                     .foregroundColor(.kilalaInk)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
             }
 
             Divider()
                 .overlay(Color.kilalaMintBorder)
 
-            // Editable Business Details (Read-only centered values by default, centered white inputs in edit mode)
-            VStack(spacing: 16) {
+            // Editable Business Details
+            VStack(alignment: .leading, spacing: 16) {
                 if isEditing {
                     editableTextField(
                         label: "BRANCH",
@@ -175,19 +200,19 @@ struct BusinessProfileView: View {
                         multiline: true
                     )
                 } else {
-                    centeredDetailField(
+                    detailField(
                         label: "BRANCH",
                         value: branchName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             ? "Main Branch"
                             : branchName
                     )
 
-                    centeredDetailField(
+                    detailField(
                         label: "CATEGORY",
                         value: formatCategory(category)
                     )
 
-                    centeredDetailField(
+                    detailField(
                         label: "ADDRESS",
                         value: address.isEmpty ? "—" : address
                     )
@@ -197,31 +222,31 @@ struct BusinessProfileView: View {
             Divider()
                 .overlay(Color.kilalaMintBorder)
 
-            // Legal & Account Identifiers (Always centered & read-only)
-            VStack(spacing: 16) {
-                centeredDetailField(
+            // Legal & Account Identifiers (Always read-only)
+            VStack(alignment: .leading, spacing: 16) {
+                detailField(
                     label: "PERMIT NUMBER",
                     value: permitNumber.isEmpty ? "—" : permitNumber,
                     monospaced: true,
                     locked: isEditing
                 )
 
-                centeredDetailField(
+                detailField(
                     label: "TIN",
                     value: tin.isEmpty ? "—" : tin,
                     monospaced: true,
                     locked: isEditing
                 )
 
-                centeredDetailField(
+                detailField(
                     label: "ISSUING LGU",
                     value: issuingLGU.isEmpty ? "—" : issuingLGU,
                     locked: isEditing
                 )
 
                 if !resolvedEmail.isEmpty {
-                    centeredDetailField(
-                        label: "EMAIL",
+                    detailField(
+                        label: "ACCOUNT EMAIL",
                         value: resolvedEmail,
                         locked: isEditing
                     )
@@ -230,25 +255,25 @@ struct BusinessProfileView: View {
 
             if isEditing {
                 Text("Legal identifiers are verified by your Issuing LGU and cannot be modified.")
-                    .font(.kilala(.caption))
+                    .font(.kilala(.footnote))
                     .foregroundColor(.kilalaInkSecondary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
                     .padding(.top, 4)
             }
         }
-        .padding(.vertical, 26)
-        .padding(.horizontal, 22)
-        .frame(maxWidth: .infinity)
-        .background(Color.kilalaMint)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.vertical, 20)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
         .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
-    // MARK: - Pill Action Buttons
+    // MARK: - Edit Mode Action Buttons (12pt Radius)
 
     private var actionButtonsSection: some View {
         Group {
@@ -264,29 +289,27 @@ struct BusinessProfileView: View {
                                 Text("Save Changes")
                             }
                         }
-                        .font(.kilala(.subheadline, weight: .bold))
+                        .font(.kilala(.callout, weight: .bold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .frame(height: 50)
                         .background(canSaveChanges ? Color.kilalaGreen : Color.kilalaInkMuted)
-                        .clipShape(Capsule())
-                        .shadow(color: Color.kilalaGreen.opacity(0.18), radius: 10, x: 0, y: 4)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .disabled(!canSaveChanges)
 
                     Button(action: cancelEditing) {
                         Text("Cancel")
-                            .font(.kilala(.subheadline, weight: .semibold))
+                            .font(.kilala(.callout, weight: .semibold))
                             .foregroundColor(.kilalaInk)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .frame(height: 48)
                             .background(Color.white)
-                            .clipShape(Capsule())
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
-                                Capsule()
-                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.kilalaBorder, lineWidth: 1)
                             )
-                            .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
                     }
                     .disabled(isSaving)
                 }
@@ -294,17 +317,18 @@ struct BusinessProfileView: View {
                 Button(action: beginEditing) {
                     HStack(spacing: 8) {
                         Image(systemName: "pencil")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.kilalaSunrise)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .accessibilityHidden(true)
+
                         Text("Update details")
-                            .font(.kilala(.subheadline, weight: .bold))
+                            .font(.kilala(.callout, weight: .bold))
                             .foregroundColor(.white)
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
                     .background(Color.kilalaGreen)
-                    .clipShape(Capsule())
-                    .shadow(color: Color.kilalaGreen.opacity(0.22), radius: 10, x: 0, y: 4)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .disabled(isLoadingProfile)
             }
@@ -314,26 +338,27 @@ struct BusinessProfileView: View {
     // MARK: - Loading State
 
     private var loadingCard: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 12) {
             ProgressView()
                 .tint(.kilalaGreen)
             Text("Loading business profile...")
-                .font(.kilala(.subheadline))
+                .font(.kilala(.callout))
                 .foregroundColor(.kilalaInkSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
-        .background(Color.kilalaMint)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.vertical, 36)
+        .padding(.horizontal, 16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
     }
 
     // MARK: - Field Components
 
-    private func centeredLabel(_ title: String, locked: Bool = false) -> some View {
+    private func fieldLabel(_ title: String, locked: Bool = false) -> some View {
         HStack(spacing: 4) {
             Text(title)
                 .font(.kilala(.caption, weight: .bold))
@@ -344,26 +369,31 @@ struct BusinessProfileView: View {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
                     .foregroundColor(.kilalaInkMuted)
+                    .accessibilityHidden(true)
             }
         }
     }
 
-    private func centeredDetailField(
+    private func detailField(
         label: String,
         value: String,
         monospaced: Bool = false,
         locked: Bool = false
     ) -> some View {
-        VStack(spacing: 4) {
-            centeredLabel(label, locked: locked)
+        VStack(alignment: .leading, spacing: 4) {
+            fieldLabel(label, locked: locked)
 
             Text(value)
-                .font(monospaced ? .kilalaMono(.subheadline, weight: .semibold) : .kilala(.subheadline, weight: .semibold))
+                .font(
+                    monospaced
+                        ? .kilalaMono(.callout, weight: .semibold)
+                        : .kilala(.callout, weight: .semibold)
+                )
                 .foregroundColor(locked ? .kilalaInkSecondary : .kilalaInk)
-                .multilineTextAlignment(.center)
+                .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func editableTextField(
@@ -372,8 +402,8 @@ struct BusinessProfileView: View {
         text: Binding<String>,
         multiline: Bool = false
     ) -> some View {
-        VStack(spacing: 6) {
-            centeredLabel(label)
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel(label)
 
             Group {
                 if multiline {
@@ -383,26 +413,27 @@ struct BusinessProfileView: View {
                     TextField(placeholder, text: text)
                 }
             }
-            .font(.kilala(.subheadline, weight: .semibold))
+            .font(.kilala(.body))
             .foregroundColor(.kilalaInk)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 14)
+            .tint(.kilalaGreen)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 12)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
-            .background(Color.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 48)
+            .background(Color.kilalaPaper.opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                    .stroke(Color.kilalaBorder, lineWidth: 1)
             )
-            .shadow(color: Color.kilalaInk.opacity(0.04), radius: 6, x: 0, y: 2)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var editableCategoryField: some View {
-        VStack(spacing: 6) {
-            centeredLabel("CATEGORY")
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("CATEGORY")
 
             Menu {
                 ForEach(Self.validCategories, id: \.self) { option in
@@ -418,29 +449,28 @@ struct BusinessProfileView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Spacer(minLength: 16)
+                HStack(spacing: 8) {
                     Text(formatCategory(draftCategory))
-                        .font(.kilala(.subheadline, weight: .semibold))
+                        .font(.kilala(.body))
                         .foregroundColor(.kilalaInk)
+                    Spacer()
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.kilalaInkSecondary)
-                    Spacer(minLength: 16)
+                        .accessibilityHidden(true)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .background(Color.white)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 48)
+                .background(Color.kilalaPaper.opacity(0.6))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                        .stroke(Color.kilalaBorder, lineWidth: 1)
                 )
-                .shadow(color: Color.kilalaInk.opacity(0.04), radius: 6, x: 0, y: 2)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Actions & Networking
