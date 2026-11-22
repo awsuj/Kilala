@@ -228,7 +228,7 @@ test.describe("LGU records page", () => {
     await expect(page.getByRole("option", { name: "Quezon City" })).toBeVisible();
 
     // Close without submitting
-    await page.keyboard.press("Escape");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).not.toBeVisible();
   });
 
