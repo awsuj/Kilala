@@ -155,47 +155,59 @@ struct KilalaBrandLogo: View {
     }
 }
 
-/// Static Business portal top header bar rendered directly on the Paper (`#F6F4EE`) canvas:
-/// untruncated, non-interactive `KilalaBrandLogo` on the left, dead-centered page title,
-/// and optional Logout pill button on the right.
+/// Stacked mobile editorial header rendered directly on the Paper (`#F6F4EE`) canvas:
+/// static untruncated `KilalaBrandLogo` on top, followed by a bold 30pt heading and optional subtitle.
 struct BusinessPortalHeader: View {
     let title: String
-    var onLogout: (() -> Void)? = nil
+    var subtitle: String? = nil
 
     var body: some View {
-        ZStack {
-            Text(title)
-                .font(.kilala(.headline, weight: .bold))
-                .foregroundColor(.kilalaInk)
-                .lineLimit(1)
+        VStack(alignment: .leading, spacing: 12) {
+            KilalaBrandLogo(iconSize: 22, wordmarkSize: 19)
+                .fixedSize()
+                .accessibilityAddTraits(.isStaticText)
 
-            HStack(alignment: .center) {
-                KilalaBrandLogo()
-                    .fixedSize()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.kilala(size: 30, weight: .bold, relativeTo: .largeTitle))
+                    .foregroundColor(.kilalaInk)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 8)
-
-                if let onLogout = onLogout {
-                    Button("Logout", action: onLogout)
-                        .font(.kilala(.subheadline, weight: .semibold))
-                        .foregroundColor(.kilalaInk)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(Color.white)
-                        .clipShape(Capsule())
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-                        )
-                        .shadow(color: Color.kilalaInk.opacity(0.05), radius: 6, x: 0, y: 2)
+                if let subtitle = subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.kilala(.callout))
+                        .foregroundColor(.kilalaInkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity)
-        .background(Color.kilalaPaper)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Accessible status badge pairing an SF Symbol icon with a text label (never color alone).
+struct KilalaStatusBadge: View {
+    let icon: String
+    let label: String
+    let foreground: Color
+    let background: Color
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .bold))
+                .accessibilityHidden(true)
+
+            Text(label)
+                .font(.kilala(.caption, weight: .bold))
+                .lineLimit(1)
+        }
+        .foregroundColor(foreground)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(background)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 

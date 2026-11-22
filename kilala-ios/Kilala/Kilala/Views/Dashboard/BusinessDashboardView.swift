@@ -33,7 +33,7 @@ struct BusinessDashboardView: View {
             case .home:
                 return isSelected ? "house.fill" : "house"
             case .transactions:
-                return "list.bullet.rectangle"
+                return isSelected ? "list.bullet.rectangle.fill" : "list.bullet.rectangle"
             case .profile:
                 return isSelected ? "person.fill" : "person"
             }
@@ -60,65 +60,76 @@ struct BusinessDashboardView: View {
     }
 
     var body: some View {
-        ZStack {
-            Group {
-                switch selectedTab {
-                case .home:
-                    BusinessHomeView(
-                        businessProfile: businessProfile,
-                        selectedTimeframe: $selectedTimeframe,
-                        totalDiscountedAmount: totalDiscountedAmount,
-                        totalDiscountedSales: totalDiscountedSales,
-                        totalOriginalAmount: totalOriginalAmount,
-                        transactionCount: transactionCount,
-                        recentTransactions: recentTransactions,
-                        isLoading: isLoading,
-                        errorMessage: errorMessage,
-                        onSeeAllTransactions: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                                selectedTab = .transactions
+        VStack(spacing: 0) {
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    switch selectedTab {
+                    case .home:
+                        BusinessHomeView(
+                            businessProfile: businessProfile,
+                            selectedTimeframe: $selectedTimeframe,
+                            totalDiscountedAmount: totalDiscountedAmount,
+                            totalDiscountedSales: totalDiscountedSales,
+                            totalOriginalAmount: totalOriginalAmount,
+                            transactionCount: transactionCount,
+                            recentTransactions: recentTransactions,
+                            isLoading: isLoading,
+                            errorMessage: errorMessage,
+                            onSeeAllTransactions: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedTab = .transactions
+                                }
+                            },
+                            onRefresh: {
+                                await loadDashboardMetrics(for: selectedTimeframe)
                             }
-                        },
-                        onRefresh: {
-                            await loadDashboardMetrics(for: selectedTimeframe)
-                        },
-                        onLogout: onLogout
-                    )
-
-                case .transactions:
-                    NavigationStack {
-                        BusinessTransactionHistoryView(
-                            onLogout: onLogout,
-                            showBrandLogo: true
                         )
-                    }
 
-                case .profile:
-                    NavigationStack {
-                        BusinessProfileView(
-                            profile: businessProfile,
-                            userEmail: userEmail,
-                            onLogout: onLogout
-                        ) { updated in
-                            businessProfile = updated
+                    case .transactions:
+                        NavigationStack {
+                            BusinessTransactionHistoryView(
+                                onLogout: onLogout,
+                                showBrandLogo: true
+                            )
+                        }
+
+                    case .profile:
+                        NavigationStack {
+                            BusinessProfileView(
+                                profile: businessProfile,
+                                userEmail: userEmail,
+                                onLogout: onLogout
+                            ) { updated in
+                                businessProfile = updated
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Detached 56x56 Floating Scan QR Button (16pt above tab bar, 16pt trailing)
+                Button {
+                    isScannerPresented = true
+                } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color.kilalaGreen)
+                        .clipShape(Circle())
+                        .shadow(color: Color.kilalaInk.opacity(0.18), radius: 10, x: 0, y: 4)
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+                .accessibilityLabel("Scan QR")
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            VStack {
-                Spacer()
-
-                BusinessSplitBottomBar(
-                    selectedTab: $selectedTab,
-                    onScanQR: {
-                        isScannerPresented = true
-                    }
-                )
-            }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
+            // Flat, Compact Bottom Tab Bar anchored to bottom safe area
+            BusinessFlatTabBar(selectedTab: $selectedTab)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .tint(.kilalaGreen)
         .onAppear {
             if !token.isEmpty {
@@ -201,9 +212,24 @@ private struct BusinessHomeView: View {
     let errorMessage: String?
     let onSeeAllTransactions: () -> Void
     let onRefresh: () async -> Void
-    var onLogout: (() -> Void)? = nil
 
     @State private var selectedTransaction: TransactionHistoryItem? = nil
+
+    private var merchantContextText: String {
+        let name = businessProfile?.businessName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lgu = businessProfile?.lguName?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch (name?.isEmpty == false ? name : nil, lgu?.isEmpty == false ? lgu : nil) {
+        case let (business?, municipality?):
+            return "\(business) · \(municipality)"
+        case let (business?, nil):
+            return business
+        case let (nil, municipality?):
+            return municipality
+        default:
+            return "Merchant Account"
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -211,27 +237,38 @@ private struct BusinessHomeView: View {
                 Color.kilalaPaper
                     .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Stacked Mobile Editorial Header + Contextual Merchant Line
+                        VStack(alignment: .leading, spacing: 12) {
+                            BusinessPortalHeader(title: "Dashboard")
+
+                            merchantContextLine
+                        }
+
+                        // Compact 36pt Time-Period Selector
+                        TimeframeSegmentedBar(
+                            selectedTimeframe: $selectedTimeframe,
+                            isLoading: isLoading
+                        )
+
                         if let errorMessage = errorMessage {
                             errorBanner(message: errorMessage)
                         }
 
-                        // Performance Overview Card (matches Digital ID outer card hierarchy)
-                        analyticsOverviewCard
+                        // Single Consolidated Financial Summary Card
+                        financialSummaryCard
 
-                        // Recent Activity Card
-                        recentActivityCard
+                        // Compact Recent Activity Section (Above the Fold)
+                        recentActivitySection
+                            .padding(.top, 8)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                     .padding(.top, 12)
-                    .padding(.bottom, 108)
+                    .padding(.bottom, 96)
                 }
                 .refreshable {
                     await onRefresh()
-                }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    BusinessPortalHeader(title: "Dashboard", onLogout: onLogout)
                 }
             }
             .navigationTitle("Dashboard")
@@ -245,249 +282,97 @@ private struct BusinessHomeView: View {
         }
     }
 
-    // MARK: - Analytics Overview Card
+    // MARK: - Contextual Merchant Line (Inline, Not a Card)
 
-    private var analyticsOverviewCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            // Card Header: Business Identity & Accreditation Pill
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text((businessProfile?.lguName ?? "Performance Overview").uppercased())
-                        .font(.kilala(.caption, weight: .bold))
-                        .tracking(0.8)
-                        .foregroundColor(.kilalaInkSecondary)
-
-                    Text(businessProfile?.businessName ?? "Business Analytics")
-                        .font(.kilala(.title3, weight: .bold))
-                        .foregroundColor(.kilalaInk)
-                }
-
-                Spacer(minLength: 8)
-
-                accreditationBadge
-            }
-
-            // Timeframe Segmented Picker
-            Picker("Timeframe", selection: $selectedTimeframe) {
-                Text("24 Hours").tag(DashboardTimeframe.past24Hours)
-                Text("Past Week").tag(DashboardTimeframe.pastWeek)
-                Text("Past Month").tag(DashboardTimeframe.pastMonth)
-            }
-            .pickerStyle(.segmented)
-
-            // Elevated White Inner Metric Sub-Cards
-            VStack(spacing: 14) {
-                MetricSubCard(
-                    label: "TOTAL DISCOUNTED AMOUNT",
-                    value: String(format: "₱%.2f", totalDiscountedAmount),
-                    subtitle: "Net revenue collected after 20% discount (\(selectedTimeframe.title.lowercased()))",
-                    badgeText: "\(transactionCount) Verified",
-                    badgeFill: Color.kilalaStateValid.opacity(0.15),
-                    badgeForeground: .kilalaStateValid,
-                    isLoading: isLoading
-                )
-
-                MetricSubCard(
-                    label: "TOTAL DISCOUNTED SALES",
-                    value: String(format: "₱%.2f", totalDiscountedSales),
-                    subtitle: "20% statutory discount granted across verified scans",
-                    badgeText: String(format: "Gross ₱%.2f", totalOriginalAmount),
-                    badgeFill: Color.kilalaMint,
-                    badgeForeground: .kilalaInkSecondary,
-                    isLoading: isLoading
-                )
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.kilalaMint)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
-    }
-
-    private var accreditationBadge: some View {
+    private var merchantContextLine: some View {
         let isAccredited = businessProfile?.isAccredited ?? true
-        return Text(isAccredited ? "Accredited" : "Inactive")
-            .font(.kilala(.caption, weight: .bold))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                isAccredited
-                    ? Color.kilalaStateValid.opacity(0.15)
-                    : Color.kilalaStateInvalid.opacity(0.15)
-            )
-            .foregroundColor(isAccredited ? .kilalaStateValid : .kilalaStateInvalid)
-            .clipShape(Capsule())
-    }
-
-    // MARK: - Recent Activity Card
-
-    private var recentActivityCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                Text("RECENT ACTIVITY")
-                    .font(.kilala(.caption, weight: .bold))
-                    .tracking(0.8)
-                    .foregroundColor(.kilalaInkSecondary)
-
-                Spacer()
-
-                Button(action: onSeeAllTransactions) {
-                    HStack(spacing: 4) {
-                        Text("See All")
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .font(.kilala(.caption, weight: .bold))
-                    .foregroundColor(.kilalaGreen)
-                }
-            }
-
-            if isLoading && recentTransactions.isEmpty {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .tint(.kilalaGreen)
-                        .padding(.vertical, 24)
-                    Spacer()
-                }
-            } else if recentTransactions.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "receipt")
-                        .font(.title2)
-                        .foregroundColor(.kilalaGreen.opacity(0.7))
-
-                    Text("No transactions in the \(selectedTimeframe.title.lowercased()).")
-                        .font(.kilala(.subheadline, weight: .bold))
-                        .foregroundColor(.kilalaInk)
-                        .multilineTextAlignment(.center)
-
-                    Text("Tap Scan QR in the bottom right to verify a Kilala ID.")
-                        .font(.kilala(.caption))
-                        .foregroundColor(.kilalaInkSecondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .padding(.horizontal, 16)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
-                )
-                .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(recentTransactions.prefix(5)) { item in
-                        Button {
-                            selectedTransaction = item
-                        } label: {
-                            TransactionHistoryRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.kilalaMint)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
-    }
-
-    // MARK: - Error Banner
-
-    private func errorBanner(message: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.circle")
-                .font(.body.weight(.semibold))
-                .foregroundColor(.kilalaStateInvalid)
-
-            Text(message)
-                .font(.kilala(.caption, weight: .medium))
+        return HStack(alignment: .center, spacing: 8) {
+            Text(merchantContextText)
+                .font(.kilala(.subheadline, weight: .semibold))
                 .foregroundColor(.kilalaInk)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            Button("Retry") {
-                Task {
-                    await onRefresh()
-                }
-            }
-            .font(.kilala(.caption, weight: .bold))
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.kilalaGreen)
-            .clipShape(Capsule())
+            KilalaStatusBadge(
+                icon: isAccredited ? "checkmark.circle.fill" : "xmark.circle.fill",
+                label: isAccredited ? "Accredited" : "Inactive",
+                foreground: isAccredited ? .kilalaStateValid : .kilalaStateInvalid,
+                background: isAccredited
+                    ? Color.kilalaStateValid.opacity(0.12)
+                    : Color.kilalaStateInvalid.opacity(0.12),
+                cornerRadius: 8
+            )
         }
-        .padding(14)
-        .background(Color.kilalaMint)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaStateInvalid.opacity(0.30), lineWidth: 1)
-        )
     }
-}
 
-// MARK: - Elevated White Metric Sub-Card
+    // MARK: - Consolidated Financial Summary Card
 
-private struct MetricSubCard: View {
-    let label: String
-    let value: String
-    let subtitle: String
-    let badgeText: String
-    let badgeFill: Color
-    let badgeForeground: Color
-    let isLoading: Bool
+    private var financialSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Top Label
+            Text("NET SALES COLLECTED")
+                .font(.kilala(.caption, weight: .bold))
+                .tracking(0.8)
+                .foregroundColor(.kilalaInkSecondary)
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+            // Hero Figure
             HStack(alignment: .center, spacing: 8) {
-                Text(label)
-                    .font(.kilala(.caption, weight: .bold))
-                    .tracking(0.8)
-                    .foregroundColor(.kilalaInkSecondary)
-
-                Spacer(minLength: 4)
-
-                Text(badgeText)
-                    .font(.kilala(.caption, weight: .bold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(badgeFill)
-                    .foregroundColor(badgeForeground)
-                    .clipShape(Capsule())
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(value)
-                    .font(.kilala(size: 30, weight: .bold, relativeTo: .largeTitle))
+                Text(String(format: "₱%.2f", totalDiscountedAmount))
+                    .font(.kilala(size: 34, weight: .bold, relativeTo: .largeTitle))
                     .foregroundColor(.kilalaInk)
                     .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
-                if isLoading {
-                    ProgressView()
-                        .tint(.kilalaGreen)
-                        .scaleEffect(0.8)
-                }
+                ProgressView()
+                    .tint(.kilalaGreen)
+                    .scaleEffect(0.8)
+                    .opacity(isLoading ? 1 : 0)
+                    .accessibilityHidden(!isLoading)
             }
 
-            Text(subtitle)
-                .font(.kilala(.footnote))
-                .foregroundColor(.kilalaInkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+                .overlay(Color.kilalaMintBorder)
+                .padding(.vertical, 2)
+
+            // 2-Column Secondary Breakdown
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Gross Sales")
+                        .font(.kilala(.footnote, weight: .medium))
+                        .foregroundColor(.kilalaInkSecondary)
+
+                    Text(String(format: "₱%.2f", totalOriginalAmount))
+                        .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
+                        .foregroundColor(.kilalaInk)
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle()
+                    .fill(Color.kilalaMintBorder)
+                    .frame(width: 1, height: 40)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Discounts Granted")
+                        .font(.kilala(.footnote, weight: .medium))
+                        .foregroundColor(.kilalaInkSecondary)
+
+                    Text(String(format: "−₱%.2f", totalDiscountedSales))
+                        .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
+                        .foregroundColor(.kilalaGreen)
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -495,87 +380,231 @@ private struct MetricSubCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
-        .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+
+    // MARK: - Recent Activity Section
+
+    private var recentActivitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                Text("Recent Activity")
+                    .font(.kilala(.headline, weight: .bold))
+                    .foregroundColor(.kilalaInk)
+
+                Spacer()
+
+                Button(action: onSeeAllTransactions) {
+                    HStack(spacing: 4) {
+                        Text("See all")
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .font(.kilala(.subheadline, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
+                    .frame(minHeight: 32)
+                }
+            }
+
+            Group {
+                if isLoading && recentTransactions.isEmpty {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                            .tint(.kilalaGreen)
+                        Text("Loading recent activity...")
+                            .font(.kilala(.callout))
+                            .foregroundColor(.kilalaInkSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .padding(.horizontal, 16)
+                } else if recentTransactions.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "receipt")
+                            .font(.system(size: 26))
+                            .foregroundColor(.kilalaInkMuted)
+                            .accessibilityHidden(true)
+
+                        Text("No verified discounts in this period")
+                            .font(.kilala(.callout, weight: .bold))
+                            .foregroundColor(.kilalaInk)
+                            .multilineTextAlignment(.center)
+
+                        Text("Tap the Scan QR button to verify a Kilala Digital ID.")
+                            .font(.kilala(.footnote))
+                            .foregroundColor(.kilalaInkSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .padding(.horizontal, 16)
+                } else {
+                    let visibleItems = Array(recentTransactions.prefix(5))
+                    VStack(spacing: 0) {
+                        ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                selectedTransaction = item
+                            } label: {
+                                TransactionHistoryRow(item: item, showCardNumber: false)
+                            }
+                            .buttonStyle(.plain)
+
+                            if index < visibleItems.count - 1 {
+                                Divider()
+                                    .overlay(Color.kilalaMintBorder)
+                                    .padding(.leading, 16)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(message: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.kilalaStateInvalid)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.kilala(.footnote, weight: .semibold))
+                .foregroundColor(.kilalaInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button("Retry") {
+                Task {
+                    await onRefresh()
+                }
+            }
+            .font(.kilala(.footnote, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .background(Color.kilalaGreen)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .padding(12)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.kilalaStateInvalid.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 
-// MARK: - Split Floating Bottom Bar
+// MARK: - Compact 36pt Time-Period Selector
 
-private struct BusinessSplitBottomBar: View {
-    @Binding var selectedTab: BusinessDashboardView.Tab
-    let onScanQR: () -> Void
+private struct TimeframeSegmentedBar: View {
+    @Binding var selectedTimeframe: DashboardTimeframe
+    let isLoading: Bool
 
-    @Namespace private var activeTabNamespace
-
-    private let barHeight: CGFloat = 64
+    private func shortLabel(for timeframe: DashboardTimeframe) -> String {
+        switch timeframe {
+        case .past24Hours:
+            return "24 Hours"
+        case .pastWeek:
+            return "7 Days"
+        case .pastMonth:
+            return "30 Days"
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Left Component: 3-Tab Floating Navigation Pill
-            HStack(spacing: 4) {
+        HStack(spacing: 4) {
+            ForEach(DashboardTimeframe.allCases) { timeframe in
+                let isSelected = selectedTimeframe == timeframe
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTimeframe = timeframe
+                    }
+                } label: {
+                    Text(shortLabel(for: timeframe))
+                        .font(.kilala(.footnote, weight: isSelected ? .bold : .semibold))
+                        .foregroundColor(isSelected ? .white : .kilalaInkSecondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(isSelected ? Color.kilalaGreen : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .frame(height: 36)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Flat, Compact Bottom Tab Bar
+
+private struct BusinessFlatTabBar: View {
+    @Binding var selectedTab: BusinessDashboardView.Tab
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaBorder)
+                .frame(height: 1)
+
+            HStack(spacing: 0) {
                 ForEach(BusinessDashboardView.Tab.allCases, id: \.self) { tab in
                     let isSelected = selectedTab == tab
 
                     Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                        withAnimation(.easeInOut(duration: 0.18)) {
                             selectedTab = tab
                         }
                     } label: {
-                        VStack(spacing: 3) {
+                        VStack(spacing: 4) {
                             Image(systemName: tab.iconName(isSelected: isSelected))
-                                .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
+                                .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
 
                             Text(tab.title)
-                                .font(.kilala(size: 10, weight: isSelected ? .bold : .medium, relativeTo: .caption2))
+                                .font(.kilala(size: 11, weight: isSelected ? .bold : .medium, relativeTo: .caption2))
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.85)
                         }
-                        .foregroundColor(isSelected ? .kilalaInk : .kilalaInkSecondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background {
-                            if isSelected {
-                                Capsule()
-                                    .fill(Color.kilalaMint)
-                                    .matchedGeometryEffect(id: "activeTabHighlight", in: activeTabNamespace)
-                            }
-                        }
-                        .contentShape(Capsule())
+                        .foregroundColor(isSelected ? .kilalaGreen : .kilalaInkSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tab.title)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
-            .padding(5)
-            .frame(maxWidth: .infinity)
-            .frame(height: barHeight)
-            .background(Color.white)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
-            )
-            .shadow(color: Color.kilalaInk.opacity(0.10), radius: 14, x: 0, y: 6)
-
-            // Right Component: Detached Circular Scan QR Button
-            Button(action: onScanQR) {
-                Image(systemName: "qrcode.viewfinder")
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: barHeight, height: barHeight)
-                    .background(Color.kilalaGreen)
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(Color.kilalaSunrise.opacity(0.45), lineWidth: 1.5)
-                    )
-                    .shadow(color: Color.kilalaGreen.opacity(0.30), radius: 14, x: 0, y: 6)
-            }
-            .buttonStyle(TactileScaleButtonStyle())
-            .accessibilityLabel("Scan QR")
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
         }
-        .padding(.horizontal, 18)
-        .padding(.bottom, 8)
+        .background(
+            Color.white
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 }
 
