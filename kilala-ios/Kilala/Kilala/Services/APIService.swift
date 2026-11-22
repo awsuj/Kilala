@@ -13,6 +13,21 @@ struct LoginResponse: Codable {
     let user: User
 }
 
+struct CardholderTransactionHistoryItem: Codable, Identifiable {
+    let id: UUID
+    let businessId: UUID?
+    let cardholderId: UUID?
+    let businessName: String
+    let branchName: String?
+    let originalAmount: Double
+    let discountedAmount: Double
+    let createdAt: String
+
+    var discountAmount: Double {
+        max(0, originalAmount - discountedAmount)
+    }
+}
+
 enum APIError: LocalizedError {
     case conflict(String)
     case badRequest(String)
@@ -436,6 +451,36 @@ class APIService {
         }
         let summary = try decoder.decode(BusinessDashboardSummary.self, from: data)
         return summary.transactions ?? []
+    }
+
+    func fetchCardholderTransactions(token: String? = nil) async throws -> [CardholderTransactionHistoryItem] {
+        if let token, !token.isEmpty {
+            self.authToken = token
+        }
+        guard let url = URL(string: "\(baseURL)/transactions/cardholder") else {
+            throw URLError(.badURL)
+        }
+        guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to fetch cardholder transactions."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode([CardholderTransactionHistoryItem].self, from: data)
     }
 
     func fetchBusinessDashboardSummary(range: String = "24h") async throws -> BusinessDashboardSummary {
