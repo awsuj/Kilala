@@ -10,6 +10,7 @@ import SwiftUI
 struct OTPVerificationView: View {
     let email: String
     @Binding var isEmailVerified: Bool
+    var onOTPVerified: (() async throws -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -156,11 +157,23 @@ struct OTPVerificationView: View {
 
         Task {
             do {
-                try await APIService.shared.verifyOTP(email: email, otp: trimmedOTP)
-                await MainActor.run {
-                    self.isLoading = false
-                    self.isEmailVerified = true
-                    dismiss()
+                if !isEmailVerified {
+                    try await APIService.shared.verifyOTP(email: email, otp: trimmedOTP)
+                    await MainActor.run {
+                        self.isEmailVerified = true
+                    }
+                }
+
+                if let onOTPVerified = onOTPVerified {
+                    try await onOTPVerified()
+                    await MainActor.run {
+                        self.isLoading = false
+                    }
+                } else {
+                    await MainActor.run {
+                        self.isLoading = false
+                        dismiss()
+                    }
                 }
             } catch {
                 await MainActor.run {
