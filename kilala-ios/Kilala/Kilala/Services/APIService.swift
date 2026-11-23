@@ -75,6 +75,7 @@ class APIService {
     var authToken: String?
     var currentUserEmail: String?
     var currentBusinessProfile: BusinessProfile?
+    var currentCardholderProfile: CardholderProfile?
     
     private init() {} // Prevent multiple instances
     
@@ -114,14 +115,15 @@ class APIService {
     }
     
     func getCardholderProfile(token: String) async throws -> CardholderProfile {
-        self.authToken = token
+        let activeToken = token.isEmpty ? (self.authToken ?? "") : token
+        self.authToken = activeToken
         guard let url = URL(string: "\(baseURL)/cardholder/me") else {
             throw URLError(.badURL)
         }
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -132,7 +134,12 @@ class APIService {
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(CardholderProfile.self, from: data)
+        let profile = try decoder.decode(CardholderProfile.self, from: data)
+        self.currentCardholderProfile = profile
+        if let profileEmail = profile.email, !profileEmail.isEmpty {
+            self.currentUserEmail = profileEmail
+        }
+        return profile
     }
     
     func verifyScan(qrToken: String, token: String) async throws -> VerificationResponse {
@@ -635,6 +642,135 @@ class APIService {
         let updatedProfile = try decoder.decode(BusinessProfile.self, from: data)
         self.currentBusinessProfile = updatedProfile
         return updatedProfile
+    }
+
+    func fetchCardholderProfile(token: String? = nil) async throws -> CardholderProfile {
+        if let token, !token.isEmpty {
+            self.authToken = token
+        }
+        guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        return try await getCardholderProfile(token: activeToken)
+    }
+
+    func updateCardholderProfile(
+        token: String? = nil,
+        email: String,
+        emergencyContactName: String,
+        emergencyContactNumber: String
+    ) async throws -> CardholderProfile {
+        if let token, !token.isEmpty {
+            self.authToken = token
+        }
+        guard let url = URL(string: "\(baseURL)/cardholder/profile") else {
+            throw URLError(.badURL)
+        }
+        guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
+
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body: [String: String] = [
+            "email": trimmedEmail,
+            "emergency_contact_name": emergencyContactName.trimmingCharacters(in: .whitespacesAndNewlines),
+            "emergency_contact_number": emergencyContactNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        if httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "This email is already in use by another account."
+            )
+        }
+
+        if httpResponse.statusCode == 400 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "Please enter a valid email address and contact details."
+            )
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to update cardholder profile. Please try again."
+            )
+        }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let updatedProfile = try decoder.decode(CardholderProfile.self, from: data)
+        self.currentCardholderProfile = updatedProfile
+        self.currentUserEmail = updatedProfile.email ?? trimmedEmail
+        return updatedProfile
+    }
+
+    func changePassword(
+        token: String = "",
+        currentPassword: String,
+        newPassword: String
+    ) async throws {
+        let resolvedToken = token.isEmpty ? (self.authToken ?? "") : token
+        if !resolvedToken.isEmpty {
+            self.authToken = resolvedToken
+        }
+        guard let url = URL(string: "\(baseURL)/auth/change-password") else {
+            throw URLError(.badURL)
+        }
+        guard !resolvedToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(resolvedToken)", forHTTPHeaderField: "Authorization")
+
+        let body: [String: String] = [
+            "current_password": currentPassword,
+            "new_password": newPassword
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        if httpResponse.statusCode == 400 || httpResponse.statusCode == 401 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "Unable to change password. Please verify your current password."
+            )
+        }
+
+        if httpResponse.statusCode == 403 || httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "Unable to change password."
+            )
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to update password. Please try again."
+            )
+        }
     }
 
 }
