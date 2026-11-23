@@ -653,7 +653,7 @@ struct CardholderTransactionDetailSheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        // Prominent Branch Strip (Tinted strip matching BusinessTransactionDetailSheet)
+                        // Branch Identity
                         VStack(alignment: .leading, spacing: 4) {
                             Text("BRANCH")
                                 .font(.kilala(.caption, weight: .bold))
@@ -661,14 +661,10 @@ struct CardholderTransactionDetailSheet: View {
                                 .foregroundColor(.kilalaInkSecondary)
 
                             Text(branchDisplayText)
-                                .font(.kilala(.title3, weight: .bold))
+                                .font(.kilala(size: 18, weight: .bold, relativeTo: .title3))
                                 .foregroundColor(.kilalaInk)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color.kilalaPaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                         Divider()
                             .overlay(Color.kilalaMintBorder)
