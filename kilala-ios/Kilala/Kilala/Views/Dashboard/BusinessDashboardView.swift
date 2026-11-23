@@ -384,8 +384,17 @@ private struct BusinessHomeView: View {
 
     // MARK: - Recent Activity Section
 
+    private var groupedRecentTransactions: [TransactionDateGroup] {
+        let sortedNewestFirst = recentTransactions.sorted { lhs, rhs in
+            let leftDate = TransactionDateFormatting.parse(lhs.createdAt) ?? Date.distantPast
+            let rightDate = TransactionDateFormatting.parse(rhs.createdAt) ?? Date.distantPast
+            return leftDate > rightDate
+        }
+        return TransactionDateFormatting.groupByDate(Array(sortedNewestFirst.prefix(5)))
+    }
+
     private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center) {
                 Text("Recent Activity")
                     .font(.kilala(.headline, weight: .bold))
@@ -406,8 +415,12 @@ private struct BusinessHomeView: View {
                 }
             }
 
-            Group {
-                if isLoading && recentTransactions.isEmpty {
+            if isLoading && recentTransactions.isEmpty {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color.kilalaMint)
+                        .frame(height: 1)
+
                     HStack(spacing: 12) {
                         ProgressView()
                             .tint(.kilalaGreen)
@@ -418,7 +431,14 @@ private struct BusinessHomeView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 28)
                     .padding(.horizontal, 16)
-                } else if recentTransactions.isEmpty {
+                }
+                .background(Color.kilalaPaper)
+            } else if recentTransactions.isEmpty {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color.kilalaMint)
+                        .frame(height: 1)
+
                     VStack(spacing: 8) {
                         Image(systemName: "receipt")
                             .font(.system(size: 26))
@@ -438,33 +458,13 @@ private struct BusinessHomeView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
                     .padding(.horizontal, 16)
-                } else {
-                    let visibleItems = Array(recentTransactions.prefix(5))
-                    VStack(spacing: 0) {
-                        ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
-                            Button {
-                                selectedTransaction = item
-                            } label: {
-                                TransactionHistoryRow(item: item, showCardNumber: false)
-                            }
-                            .buttonStyle(.plain)
-
-                            if index < visibleItems.count - 1 {
-                                Divider()
-                                    .overlay(Color.kilalaMintBorder)
-                                    .padding(.leading, 16)
-                            }
-                        }
-                    }
+                }
+                .background(Color.kilalaPaper)
+            } else {
+                ChronologicalTransactionList(groups: groupedRecentTransactions) { item in
+                    selectedTransaction = item
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
-            )
         }
     }
 
