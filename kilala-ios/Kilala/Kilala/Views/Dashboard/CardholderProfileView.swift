@@ -41,6 +41,11 @@ struct CardholderProfileView: View {
     @State private var draftEmergencyContactNumber: String = ""
     @State private var draftEmail: String = ""
 
+    // Email change OTP verification navigation state
+    @State private var isShowingEmailOTP: Bool = false
+    @State private var pendingVerificationEmail: String = ""
+    @State private var didCompleteEmailOTPVerification: Bool = false
+
     // Loading & alert state
     @State private var isLoadingProfile: Bool = false
     @State private var isSaving: Bool = false
@@ -231,7 +236,40 @@ struct CardholderProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .task {
-            await loadCurrentProfile()
+            if !isShowingEmailOTP {
+                await loadCurrentProfile()
+            }
+        }
+        .navigationDestination(isPresented: $isShowingEmailOTP) {
+            OTPVerificationView(
+                email: pendingVerificationEmail,
+                token: activeToken,
+                onProfileVerified: { verifiedProfile in
+                    didCompleteEmailOTPVerification = true
+                    applyProfile(verifiedProfile)
+                    onProfileUpdated?(verifiedProfile)
+                },
+                onVerified: { verifiedEmail in
+                    didCompleteEmailOTPVerification = true
+                    email = verifiedEmail
+                    draftEmail = verifiedEmail
+                    pendingVerificationEmail = ""
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isEditing = false
+                    }
+                    showSuccessAlert = true
+                }
+            )
+        }
+        .onChange(of: isShowingEmailOTP) { _, isPresented in
+            if !isPresented && !didCompleteEmailOTPVerification {
+                // Retain the existing verified email if the user cancelled or navigated back
+                draftEmail = email
+                pendingVerificationEmail = ""
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isEditing = false
+                }
+            }
         }
         .alert("Profile Updated", isPresented: $showSuccessAlert) {
             Button("OK", role: .cancel) {}
@@ -760,6 +798,9 @@ struct CardholderProfileView: View {
     }
 
     private func cancelEditing() {
+        draftEmergencyContactName = emergencyContactName
+        draftEmergencyContactNumber = emergencyContactNumber
+        draftEmail = email
         withAnimation(.easeInOut(duration: 0.2)) {
             isEditing = false
         }
@@ -784,13 +825,14 @@ struct CardholderProfileView: View {
     }
 
     private func saveChanges() {
-        let trimmedEmail = draftEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmedEmail.isEmpty, trimmedEmail.contains("@"), trimmedEmail.contains(".") else {
             errorMessage = "Please enter a valid email address."
             showErrorAlert = true
             return
         }
 
+        let currentVerifiedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         isSaving = true
 
         Task {
@@ -805,10 +847,21 @@ struct CardholderProfileView: View {
                     isSaving = false
                     applyProfile(updated)
                     onProfileUpdated?(updated)
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isEditing = false
+
+                    let needsEmailOTP =
+                        (updated.requiresEmailVerification == true) ||
+                        (trimmedEmail != currentVerifiedEmail)
+
+                    if needsEmailOTP {
+                        pendingVerificationEmail = updated.pendingEmail ?? trimmedEmail
+                        didCompleteEmailOTPVerification = false
+                        isShowingEmailOTP = true
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isEditing = false
+                        }
+                        showSuccessAlert = true
                     }
-                    showSuccessAlert = true
                 }
             } catch {
                 await MainActor.run {

@@ -32,6 +32,8 @@ struct CardholderProfile: Codable, Identifiable {
     var emergencyContactPhone: String? = nil
     var emergencyContactNumber: String? = nil
     var email: String? = nil
+    var requiresEmailVerification: Bool? = nil
+    var pendingEmail: String? = nil
     
     var fullName: String {
         [firstName, middleName, lastName]
