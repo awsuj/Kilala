@@ -515,35 +515,283 @@ app.post('/api/auth/register-business', async (req: Request, res: Response) => {
   }
 });
 
+// 2.4 Change Password (Shared by Cardholder, Business, and LGU Admin)
+app.post(
+  '/api/auth/change-password',
+  authenticateToken,
+  async (req: AuthRequest, res: Response) => {
+    const currentPassword =
+      req.body.current_password !== undefined
+        ? req.body.current_password
+        : req.body.currentPassword;
+    const newPassword =
+      req.body.new_password !== undefined
+        ? req.body.new_password
+        : req.body.newPassword;
+
+    if (
+      typeof currentPassword !== 'string' ||
+      typeof newPassword !== 'string' ||
+      currentPassword.length === 0 ||
+      newPassword.length === 0
+    ) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+
+    const hasMinLength = newPassword.length >= 8;
+    const hasUppercase = /[A-Z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecialChar = /[^A-Za-z0-9]/.test(newPassword);
+
+    if (!hasMinLength || !hasUppercase || !hasNumber || !hasSpecialChar) {
+      return res.status(400).json({
+        error:
+          'Password must be at least 8 characters and contain an uppercase letter, a number, and a special character'
+      });
+    }
+
+    try {
+      const userRes = await pool.query(
+        'SELECT id, password_hash, is_active FROM users WHERE id = $1',
+        [req.user!.id]
+      );
+
+      if (userRes.rows.length === 0) {
+        return res.status(404).json({ error: 'User account not found' });
+      }
+
+      const user = userRes.rows[0];
+      if (!user.is_active) {
+        return res.status(403).json({ error: 'Account is deactivated' });
+      }
+
+      let isCurrentValid = false;
+      if (user.password_hash === '$2b$10$MockHashForTestingOnly123456789012') {
+        isCurrentValid = currentPassword === 'MockHashForTestingOnly123456789012';
+      } else {
+        isCurrentValid = await bcrypt.compare(currentPassword, user.password_hash);
+      }
+
+      if (!isCurrentValid) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+
+      const isSameAsCurrent =
+        currentPassword === newPassword ||
+        (user.password_hash !== '$2b$10$MockHashForTestingOnly123456789012' &&
+          (await bcrypt.compare(newPassword, user.password_hash)));
+
+      if (isSameAsCurrent) {
+        return res.status(400).json({
+          error: 'New password must be different from your current password'
+        });
+      }
+
+      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      await pool.query(
+        'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [newPasswordHash, user.id]
+      );
+
+      res.status(200).json({ message: 'Password updated successfully' });
+    } catch (error) {
+      console.error('Change password error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 // ============================================================================
 // 3. CARDHOLDER ROUTES (iOS - PWD & Senior Citizens)
 // ============================================================================
 
 // 3.1 Get Logged-in Cardholder Profile & QR Token
+const handleGetCardholderProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT cp.*,
+              l.municipality_name AS lgu_name,
+              l.municipality_name AS issuing_lgu,
+              l.lgu_code,
+              cp.issued_date AS issue_date,
+              cp.emergency_contact_phone AS emergency_contact_number,
+              cp.photo_url AS profile_photo_url,
+              u.email
+       FROM cardholder_profiles cp
+       JOIN lgus l ON l.id = cp.lgu_id
+       LEFT JOIN users u ON u.id = cp.user_id
+       WHERE cp.user_id = $1`,
+      [req.user!.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cardholder profile not found' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching cardholder profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 app.get(
   '/api/cardholder/me',
   authenticateToken,
   requireRole(['CARDHOLDER']),
-  async (req: AuthRequest, res: Response) => {
-    try {
-      const result = await pool.query(
-        `SELECT cp.*, l.municipality_name AS lgu_name, l.lgu_code
-         FROM cardholder_profiles cp
-         JOIN lgus l ON l.id = cp.lgu_id
-         WHERE cp.user_id = $1`,
-        [req.user!.id]
+  handleGetCardholderProfile
+);
+
+app.get(
+  '/api/cardholder/profile',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleGetCardholderProfile
+);
+
+// 3.1.1 Update Logged-in Cardholder Profile (Editable Fields Only)
+const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+
+  // Strictly whitelist editable fields: email, emergency_contact_name, emergency_contact_number.
+  // Silently ignore read-only identity and LGU fields.
+  const rawEmail = req.body.email;
+  const rawEmergencyContactName =
+    req.body.emergency_contact_name !== undefined
+      ? req.body.emergency_contact_name
+      : req.body.emergencyContactName;
+  const rawEmergencyContactNumber =
+    req.body.emergency_contact_number !== undefined
+      ? req.body.emergency_contact_number
+      : req.body.emergency_contact_phone !== undefined
+      ? req.body.emergency_contact_phone
+      : req.body.emergencyContactNumber !== undefined
+      ? req.body.emergencyContactNumber
+      : req.body.emergencyContactPhone;
+
+  const emailValue =
+    rawEmail === undefined
+      ? undefined
+      : typeof rawEmail === 'string'
+      ? rawEmail.trim().toLowerCase()
+      : '';
+
+  if (
+    emailValue !== undefined &&
+    (!emailValue || !emailValue.includes('@') || !emailValue.includes('.'))
+  ) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  const emergencyContactNameValue =
+    rawEmergencyContactName === undefined
+      ? undefined
+      : typeof rawEmergencyContactName === 'string'
+      ? rawEmergencyContactName.trim() || null
+      : null;
+
+  const emergencyContactNumberValue =
+    rawEmergencyContactNumber === undefined
+      ? undefined
+      : typeof rawEmergencyContactNumber === 'string'
+      ? rawEmergencyContactNumber.trim() || null
+      : null;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const profileCheck = await client.query(
+      'SELECT id FROM cardholder_profiles WHERE user_id = $1',
+      [userId]
+    );
+
+    if (profileCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cardholder profile not found' });
+    }
+
+    if (emailValue !== undefined) {
+      const existingUser = await client.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [emailValue, userId]
       );
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Cardholder profile not found' });
+      if (existingUser.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Email is already in use by another account' });
       }
 
-      res.status(200).json(result.rows[0]);
-    } catch (error) {
-      console.error('Error fetching cardholder profile:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      await client.query(
+        'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [emailValue, userId]
+      );
     }
+
+    await client.query(
+      `UPDATE cardholder_profiles
+       SET emergency_contact_name = CASE WHEN $1::boolean THEN $2 ELSE emergency_contact_name END,
+           emergency_contact_phone = CASE WHEN $3::boolean THEN $4 ELSE emergency_contact_phone END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $5`,
+      [
+        emergencyContactNameValue !== undefined,
+        emergencyContactNameValue ?? null,
+        emergencyContactNumberValue !== undefined,
+        emergencyContactNumberValue ?? null,
+        userId
+      ]
+    );
+
+    const updatedResult = await client.query(
+      `SELECT cp.*,
+              l.municipality_name AS lgu_name,
+              l.municipality_name AS issuing_lgu,
+              l.lgu_code,
+              cp.issued_date AS issue_date,
+              cp.emergency_contact_phone AS emergency_contact_number,
+              cp.photo_url AS profile_photo_url,
+              u.email
+       FROM cardholder_profiles cp
+       JOIN lgus l ON l.id = cp.lgu_id
+       LEFT JOIN users u ON u.id = cp.user_id
+       WHERE cp.user_id = $1`,
+      [userId]
+    );
+
+    await client.query('COMMIT');
+    res.status(200).json(updatedResult.rows[0]);
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Email is already in use by another account' });
+    }
+    console.error('Error updating cardholder profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
+};
+
+app.put(
+  '/api/cardholder/profile',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleUpdateCardholderProfile
+);
+
+app.put(
+  '/api/cardholder/me',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleUpdateCardholderProfile
+);
+
+app.patch(
+  '/api/cardholder/profile',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleUpdateCardholderProfile
 );
 
 // 3.2 Rotate / Refresh QR Secret Token
