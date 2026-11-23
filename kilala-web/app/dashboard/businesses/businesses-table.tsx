@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -18,18 +19,30 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { toggleAccreditation } from "./actions";
+import type { Lgu } from "@/lib/lgus";
+import { toggleAccreditation, createBusiness, type NewBusinessInput } from "./actions";
+import AddBusinessDialog from "./AddBusinessDialog";
 
 export interface Business {
   id: string;
   business_name: string;
   branch_name: string | null;
-  email: string;
+  business_permit_no: string;
+  email: string | null;
   is_accredited: boolean;
+  is_active: boolean;
 }
 
-export default function BusinessesTable({ rows }: { rows: Business[] }) {
+export default function BusinessesTable({
+  rows,
+  lgus,
+}: {
+  rows: Business[];
+  lgus: Lgu[];
+}) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const accredited = rows.filter((r) => r.is_accredited).length;
@@ -44,15 +57,37 @@ export default function BusinessesTable({ rows }: { rows: Business[] }) {
     });
   };
 
+  const handleAdd = (input: NewBusinessInput) => {
+    setError(null);
+    startTransition(async () => {
+      const res = await createBusiness(input);
+      if (res.error) {
+        setToast(res.error);
+      } else {
+        setToast(`${input.businessName} added`);
+        router.refresh();
+      }
+    });
+  };
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Businesses</CardTitle>
-          <CardDescription>
-            {accredited} of {rows.length} accredited · merchants that honor PWD &
-            Senior discounts
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1.5">
+              <CardTitle>Businesses</CardTitle>
+              <CardDescription>
+                {accredited} of {rows.length} accredited · merchants that honor
+                PWD & Senior discounts
+              </CardDescription>
+            </div>
+            <AddBusinessDialog
+              lgus={lgus}
+              existingPermits={rows.map((r) => r.business_permit_no)}
+              onAdd={handleAdd}
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {error && (
@@ -85,7 +120,11 @@ export default function BusinessesTable({ rows }: { rows: Business[] }) {
                       {b.branch_name || "—"}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
-                      {b.email}
+                      {b.is_active ? (
+                        b.email
+                      ) : (
+                        <span className="font-sans italic">No account yet</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {b.is_accredited ? (
@@ -118,6 +157,16 @@ export default function BusinessesTable({ rows }: { rows: Business[] }) {
           )}
         </CardContent>
       </Card>
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-lg bg-[#11201B] px-4 py-3 text-sm text-white shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
