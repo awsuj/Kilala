@@ -88,7 +88,7 @@ CREATE TABLE cardholder_profiles (
 -- 2.5 Business Profiles (Merchants / Commercial Establishments)
 CREATE TABLE business_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID UNIQUE REFERENCES users(id) ON DELETE SET NULL, -- Nullable if pre-accredited & unclaimed on mobile
     lgu_id UUID NOT NULL REFERENCES lgus(id) ON DELETE RESTRICT,
     business_name VARCHAR(200) NOT NULL,
     branch_name VARCHAR(200),

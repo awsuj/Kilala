@@ -515,6 +515,283 @@ app.post('/api/auth/register-business', async (req: Request, res: Response) => {
   }
 });
 
+// 2.3.1 Verify Pre-Accredited Business Record (Business Claiming Step 1)
+const handleVerifyBusinessRecord = async (req: Request, res: Response) => {
+  const rawBusinessName = req.body.businessName ?? req.body.business_name;
+  const rawLgu = req.body.lgu ?? req.body.lgu_name ?? req.body.issuing_lgu;
+  const rawLguId = req.body.lguId ?? req.body.lgu_id;
+  const rawTin = req.body.tin ?? req.body.tin_number ?? req.body.tinNumber;
+  const rawPermitNo =
+    req.body.permitNumber ??
+    req.body.permit_number ??
+    req.body.businessPermitNo ??
+    req.body.business_permit_no;
+
+  const normalizedName =
+    typeof rawBusinessName === 'string'
+      ? rawBusinessName.trim().replace(/\s+/g, ' ')
+      : '';
+  const normalizedLgu =
+    typeof rawLgu === 'string' ? rawLgu.trim().replace(/\s+/g, ' ') : '';
+  const normalizedLguId =
+    typeof rawLguId === 'string' && rawLguId.trim() ? rawLguId.trim() : null;
+  const normalizedTin =
+    typeof rawTin === 'string' ? rawTin.replace(/[\s-]+/g, '').toUpperCase() : '';
+  const normalizedPermitNo =
+    typeof rawPermitNo === 'string'
+      ? rawPermitNo.trim().replace(/\s+/g, ' ')
+      : '';
+
+  if (!normalizedName || (!normalizedLgu && !normalizedLguId) || !normalizedTin || !normalizedPermitNo) {
+    return res.status(400).json({
+      error: 'Business name, issuing LGU, TIN, and business permit number are required for verification'
+    });
+  }
+
+  try {
+    const params: any[] = [normalizedName, normalizedTin, normalizedPermitNo];
+    let lguClause = '';
+
+    if (normalizedLguId) {
+      params.push(normalizedLguId);
+      lguClause = `AND bp.lgu_id = $${params.length}`;
+    } else {
+      params.push(normalizedLgu);
+      lguClause = `AND (
+        LOWER(REGEXP_REPLACE(TRIM(l.municipality_name), '\\s+', ' ', 'g')) = LOWER($${params.length})
+        OR LOWER(TRIM(l.lgu_code)) = LOWER($${params.length})
+      )`;
+    }
+
+    const bizRes = await pool.query(
+      `SELECT bp.id,
+              bp.user_id,
+              bp.lgu_id,
+              bp.business_name,
+              bp.branch_name,
+              bp.category,
+              bp.business_permit_no,
+              bp.tin_number,
+              bp.address,
+              bp.is_accredited,
+              l.municipality_name AS lgu_name,
+              l.lgu_code
+       FROM business_profiles bp
+       JOIN lgus l ON l.id = bp.lgu_id
+       WHERE LOWER(REGEXP_REPLACE(TRIM(bp.business_name), '\\s+', ' ', 'g')) = LOWER($1)
+         AND UPPER(REGEXP_REPLACE(bp.tin_number, '[\\s-]+', '', 'g')) = $2
+         AND LOWER(REGEXP_REPLACE(TRIM(bp.business_permit_no), '\\s+', ' ', 'g')) = LOWER($3)
+         ${lguClause}
+       LIMIT 1`,
+      params
+    );
+
+    if (bizRes.rows.length === 0) {
+      return res.status(404).json({
+        error: 'No matching accredited business record found. Please check your details.'
+      });
+    }
+
+    const business = bizRes.rows[0];
+
+    if (!business.is_accredited) {
+      return res.status(403).json({
+        error: 'This business accreditation is currently inactive. Please contact your LGU.'
+      });
+    }
+
+    if (business.user_id) {
+      return res.status(409).json({
+        error: 'This business record has already been claimed by an existing account.'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Business record verified successfully',
+      business_id: business.id,
+      lgu_id: business.lgu_id,
+      lgu_name: business.lgu_name,
+      lgu_code: business.lgu_code,
+      business_name: business.business_name,
+      branch_name: business.branch_name,
+      category: business.category,
+      business_permit_no: business.business_permit_no,
+      tin_number: business.tin_number,
+      address: business.address,
+      is_accredited: business.is_accredited
+    });
+  } catch (error) {
+    console.error('Verify business record error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+app.post('/api/auth/business/verify', handleVerifyBusinessRecord);
+app.post('/api/businesses/lookup', handleVerifyBusinessRecord);
+
+// 2.3.2 Claim Pre-Accredited Business Account (after OTP verification)
+app.post('/api/auth/claim-business', async (req: Request, res: Response) => {
+  const businessId = req.body.business_id ?? req.body.businessId;
+  const email = req.body.email;
+  const password = req.body.password;
+  const rawBranchName = req.body.branch_name ?? req.body.branchName ?? req.body.branch;
+  const rawCategory = req.body.category;
+  const rawPermitNo =
+    req.body.business_permit_no ?? req.body.businessPermitNo ?? req.body.permit_number;
+  const rawAddress = req.body.address;
+
+  if (!businessId || !email || !password) {
+    return res.status(400).json({
+      error: 'business_id, email, and password are required to claim your business account'
+    });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const branchNameValue =
+    rawBranchName === undefined
+      ? undefined
+      : typeof rawBranchName === 'string'
+      ? rawBranchName.trim() || null
+      : null;
+  const categoryValue =
+    typeof rawCategory === 'string' && rawCategory.trim() !== ''
+      ? rawCategory.trim().toUpperCase()
+      : undefined;
+  const permitNoValue =
+    typeof rawPermitNo === 'string' && rawPermitNo.trim() !== ''
+      ? rawPermitNo.trim()
+      : undefined;
+  const addressValue =
+    typeof rawAddress === 'string' && rawAddress.trim() !== ''
+      ? rawAddress.trim()
+      : undefined;
+
+  const client = await pool.connect();
+  try {
+    await ensureOtpTable();
+
+    if (categoryValue) {
+      const allowed = await client.query(
+        'SELECT unnest(enum_range(NULL::business_category))::text AS value'
+      );
+      const allowedCategories: string[] = allowed.rows.map((row: { value: string }) => row.value);
+      if (!allowedCategories.includes(categoryValue)) {
+        return res.status(400).json({
+          error: `Invalid category. Choose one of: ${allowedCategories.join(', ')}`
+        });
+      }
+    }
+
+    await client.query('BEGIN');
+
+    // Enforce verified email OTP before finalizing business account creation
+    const otpVerificationRes = await client.query(
+      `SELECT id FROM otp_verifications
+       WHERE LOWER(email) = $1
+         AND verified = TRUE
+         AND expires_at > NOW() - INTERVAL '30 minutes'
+       ORDER BY expires_at DESC
+       LIMIT 1`,
+      [normalizedEmail]
+    );
+
+    if (otpVerificationRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'Your email must be verified via OTP before claiming your business account.'
+      });
+    }
+
+    const bizRes = await client.query(
+      'SELECT * FROM business_profiles WHERE id = $1 FOR UPDATE',
+      [businessId]
+    );
+
+    if (bizRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No matching accredited business record found.' });
+    }
+
+    const business = bizRes.rows[0];
+
+    if (!business.is_accredited) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'This business accreditation is currently inactive. Please contact your LGU.'
+      });
+    }
+
+    if (business.user_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'This business record has already been claimed by an account.'
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const userRes = await client.query(
+      `INSERT INTO users (email, password_hash, role)
+       VALUES ($1, $2, 'BUSINESS')
+       RETURNING id, email, role`,
+      [normalizedEmail, passwordHash]
+    );
+
+    const newUser = userRes.rows[0];
+
+    const updatedBizRes = await client.query(
+      `UPDATE business_profiles bp
+       SET user_id = $1,
+           branch_name = CASE WHEN $2::boolean THEN $3 ELSE bp.branch_name END,
+           category = COALESCE($4::business_category, bp.category),
+           business_permit_no = COALESCE($5, bp.business_permit_no),
+           address = COALESCE($6, bp.address),
+           updated_at = CURRENT_TIMESTAMP
+       FROM lgus l
+       WHERE bp.id = $7
+         AND l.id = bp.lgu_id
+       RETURNING bp.*, l.municipality_name AS lgu_name`,
+      [
+        newUser.id,
+        branchNameValue !== undefined,
+        branchNameValue ?? null,
+        categoryValue ?? null,
+        permitNoValue ?? null,
+        addressValue ?? null,
+        business.id
+      ]
+    );
+
+    await client.query(
+      'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+      [normalizedEmail]
+    );
+
+    await client.query('COMMIT');
+
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, role: newUser.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    return res.status(201).json({
+      message: 'Business account claimed successfully',
+      token,
+      user: newUser,
+      businessProfile: updatedBizRes.rows[0]
+    });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Email or Business Permit No. is already in use' });
+    }
+    console.error('Claim business error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // ============================================================================
 // 3. CARDHOLDER ROUTES (iOS - PWD & Senior Citizens)
 // ============================================================================
@@ -1302,7 +1579,7 @@ app.get(
       const result = await pool.query(
         `SELECT bp.*, u.email
          FROM business_profiles bp
-         JOIN users u ON u.id = bp.user_id
+         LEFT JOIN users u ON u.id = bp.user_id
          WHERE bp.lgu_id = $1
          ORDER BY bp.created_at DESC`,
         [admin.lgu_id]
