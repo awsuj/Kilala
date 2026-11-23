@@ -55,13 +55,18 @@ struct BusinessTransactionHistoryView: View {
         }
     }
 
+    private var groupedTransactions: [TransactionDateGroup] {
+        TransactionDateFormatting.groupByDate(filteredTransactions)
+    }
+
     var body: some View {
         ZStack {
             Color.kilalaPaper
                 .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Fixed Header & Search/Calendar Bar above ScrollView
+                VStack(alignment: .leading, spacing: 14) {
                     if showBrandLogo {
                         BusinessPortalHeader(title: "Transactions")
                     }
@@ -74,26 +79,36 @@ struct BusinessTransactionHistoryView: View {
                             activeDateFilterChip(label: rangeLabel)
                         }
                     }
-
-                    if let errorMessage = errorMessage {
-                        errorBanner(message: errorMessage)
-                    }
-
-                    if isLoading && transactions.isEmpty {
-                        loadingCard
-                    } else if filteredTransactions.isEmpty {
-                        emptyStateCard
-                    } else {
-                        transactionsListSection
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 96)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                await loadTransactions()
+                .padding(.bottom, 8)
+                .background(Color.kilalaPaper)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let errorMessage = errorMessage {
+                            errorBanner(message: errorMessage)
+                                .padding(.top, 8)
+                        }
+
+                        if isLoading && transactions.isEmpty {
+                            loadingCard
+                                .padding(.top, 8)
+                        } else if filteredTransactions.isEmpty {
+                            emptyStateCard
+                                .padding(.top, 8)
+                        } else {
+                            transactionsListSection
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 96)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .refreshable {
+                    await loadTransactions()
+                }
             }
         }
         .navigationTitle("Transactions")
@@ -256,53 +271,34 @@ struct BusinessTransactionHistoryView: View {
         }
     }
 
-    // MARK: - Unified Transactions List Card
+    // MARK: - Chronological Date-Grouped Timeline
 
     private var transactionsListSection: some View {
-        LazyVStack(spacing: 0) {
-            ForEach(Array(filteredTransactions.enumerated()), id: \.element.id) { index, item in
-                Button {
-                    selectedTransaction = item
-                } label: {
-                    TransactionHistoryRow(item: item, showCardNumber: false)
-                }
-                .buttonStyle(.plain)
-
-                if index < filteredTransactions.count - 1 {
-                    Divider()
-                        .overlay(Color.kilalaMintBorder)
-                        .padding(.leading, 16)
-                }
-            }
+        ChronologicalTransactionList(groups: groupedTransactions) { item in
+            selectedTransaction = item
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
     }
 
     // MARK: - Loading, Empty & Error States
 
     private var loadingCard: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .tint(.kilalaGreen)
-            Text("Loading transactions...")
-                .font(.kilala(.callout))
-                .foregroundColor(.kilalaInkSecondary)
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaMint)
+                .frame(height: 1)
+
+            HStack(spacing: 12) {
+                ProgressView()
+                    .tint(.kilalaGreen)
+                Text("Loading transactions...")
+                    .font(.kilala(.callout))
+                    .foregroundColor(.kilalaInkSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 36)
+            .padding(.horizontal, 16)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-        .padding(.horizontal, 16)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
+        .background(Color.kilalaPaper)
     }
 
     private var emptyStateCard: some View {
@@ -317,7 +313,7 @@ struct BusinessTransactionHistoryView: View {
 
         let titleText: String = {
             if hasAnyFilter { return "No matching transactions" }
-            return "No Transactions Yet"
+            return "No verified discounts in this period"
         }()
 
         let subtitleText: String = {
@@ -332,49 +328,51 @@ struct BusinessTransactionHistoryView: View {
             }
         }()
 
-        return VStack(spacing: 8) {
-            Image(systemName: iconName)
-                .font(.system(size: 28))
-                .foregroundColor(.kilalaInkMuted)
-                .accessibilityHidden(true)
+        return VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaMint)
+                .frame(height: 1)
 
-            Text(titleText)
-                .font(.kilala(.headline, weight: .bold))
-                .foregroundColor(.kilalaInk)
+            VStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.system(size: 28))
+                    .foregroundColor(.kilalaInkMuted)
+                    .accessibilityHidden(true)
 
-            Text(subtitleText)
-                .font(.kilala(.subheadline))
-                .foregroundColor(.kilalaInkSecondary)
-                .multilineTextAlignment(.center)
+                Text(titleText)
+                    .font(.kilala(.headline, weight: .bold))
+                    .foregroundColor(.kilalaInk)
+                    .multilineTextAlignment(.center)
 
-            if hasActiveDateFilter {
-                Button("Reset Date Filter") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        filterStartDate = nil
-                        filterEndDate = nil
+                Text(subtitleText)
+                    .font(.kilala(.subheadline))
+                    .foregroundColor(.kilalaInkSecondary)
+                    .multilineTextAlignment(.center)
+
+                if hasActiveDateFilter {
+                    Button("Reset Date Filter") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            filterStartDate = nil
+                            filterEndDate = nil
+                        }
+                        Task {
+                            await loadTransactions()
+                        }
                     }
-                    Task {
-                        await loadTransactions()
-                    }
+                    .font(.kilala(.footnote, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.kilalaMint)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.top, 6)
                 }
-                .font(.kilala(.footnote, weight: .bold))
-                .foregroundColor(.kilalaGreen)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.kilalaMint)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .padding(.top, 6)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 36)
+            .padding(.horizontal, 16)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-        .padding(.horizontal, 16)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
+        .background(Color.kilalaPaper)
     }
 
     private func errorBanner(message: String) -> some View {
@@ -433,14 +431,79 @@ struct BusinessTransactionHistoryView: View {
     }
 }
 
-// MARK: - Reusable Flat Transaction Row (Used inside 16pt White List Container)
+// MARK: - Chronological Date-Grouped Timeline (Paper-and-Mint)
+
+struct TransactionDateGroup: Identifiable {
+    let date: Date
+    let title: String
+    let items: [TransactionHistoryItem]
+
+    var id: Date { date }
+}
+
+struct ChronologicalTransactionList: View {
+    let groups: [TransactionDateGroup]
+    var showCardNumber: Bool = false
+    let onSelect: (TransactionHistoryItem) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(groups) { group in
+                Section {
+                    ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
+                        Button {
+                            onSelect(item)
+                        } label: {
+                            TransactionHistoryRow(
+                                item: item,
+                                showCardNumber: showCardNumber,
+                                showTimeOnly: true,
+                                horizontalPadding: 0
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        if itemIndex < group.items.count - 1 {
+                            Rectangle()
+                                .fill(Color.kilalaMint)
+                                .frame(height: 1)
+                        }
+                    }
+                } header: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(group.title)
+                            .font(.kilala(size: 17, weight: .bold, relativeTo: .headline))
+                            .foregroundColor(.kilalaGreen)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 14)
+                            .padding(.bottom, 8)
+
+                        Rectangle()
+                            .fill(Color.kilalaMintBorder)
+                            .frame(height: 1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.kilalaPaper)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.kilalaPaper)
+    }
+}
+
+// MARK: - Reusable Flat Transaction Row (Direct on kilalaPaper)
 
 struct TransactionHistoryRow: View {
     let item: TransactionHistoryItem
     var showCardNumber: Bool = false
+    var showTimeOnly: Bool = true
+    var horizontalPadding: CGFloat = 0
 
     private var formattedTimestamp: String {
-        TransactionDateFormatting.formatCompact(item.createdAt)
+        showTimeOnly
+            ? TransactionDateFormatting.formatTimeOnly(item.createdAt)
+            : TransactionDateFormatting.formatCompact(item.createdAt)
     }
 
     var body: some View {
@@ -474,7 +537,7 @@ struct TransactionHistoryRow: View {
                 .accessibilityHidden(true)
         }
         .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
         .frame(minHeight: 60)
         .contentShape(Rectangle())
     }
@@ -965,6 +1028,46 @@ enum TransactionDateFormatting {
             return formatter.string(from: orderedStart)
         }
         return "\(formatter.string(from: orderedStart)) – \(formatter.string(from: orderedEnd))"
+    }
+
+    static func formatTimeOnly(_ isoString: String) -> String {
+        guard let date = parse(isoString) else { return isoString }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
+    }
+
+    static func sectionHeaderTitle(for dayStart: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: dayStart)
+    }
+
+    static func groupByDate(
+        _ items: [TransactionHistoryItem],
+        calendar: Calendar = .current
+    ) -> [TransactionDateGroup] {
+        var buckets: [Date: [(item: TransactionHistoryItem, timestamp: Date)]] = [:]
+
+        for item in items {
+            let parsedDate = parse(item.createdAt) ?? Date.distantPast
+            let dayStart = calendar.startOfDay(for: parsedDate)
+            buckets[dayStart, default: []].append((item: item, timestamp: parsedDate))
+        }
+
+        return buckets
+            .sorted { $0.key > $1.key }
+            .map { dayStart, entries in
+                let sortedItems = entries
+                    .sorted { $0.timestamp > $1.timestamp }
+                    .map(\.item)
+                return TransactionDateGroup(
+                    date: dayStart,
+                    title: sectionHeaderTitle(for: dayStart, calendar: calendar),
+                    items: sortedItems
+                )
+            }
     }
 
     static func formatCompact(_ isoString: String) -> String {
