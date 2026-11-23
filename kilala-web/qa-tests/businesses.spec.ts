@@ -4,6 +4,8 @@ const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
 const ADMIN_EMAIL = "admin@makati.gov.ph";
 const ADMIN_PASSWORD = "MockHashForTestingOnly123456789012";
+const SUPERADMIN_EMAIL = "superadmin@kilala.gov.ph";
+const SUPERADMIN_PASSWORD = "Kilala2026";
 
 interface LoginResponse {
   token: string;
@@ -91,5 +93,44 @@ test.describe("LGU Add Business — web", () => {
       dialog.getByText("This business permit already exists."),
     ).toBeVisible();
     await expect(dialog).toBeVisible();
+  });
+
+  test("a server-side error keeps the dialog open with the typed input preserved", async ({
+    page,
+    request,
+  }) => {
+    // A SUPERADMIN with no city selected is rejected server-side. The dialog must
+    // stay open, show the error, and keep what the admin typed — not vanish.
+    const res = await request.post(`${API_BASE_URL}/api/auth/login`, {
+      data: { email: SUPERADMIN_EMAIL, password: SUPERADMIN_PASSWORD },
+    });
+    expect(res.status()).toBe(200);
+    const { token } = (await res.json()) as LoginResponse;
+    await page.context().addCookies([
+      {
+        name: process.env.AUTH_COOKIE || "kilala_token",
+        value: token,
+        url: WEB_BASE_URL,
+      },
+    ]);
+
+    await page.goto("/dashboard/businesses");
+    await page.getByRole("button", { name: "+ Add Business" }).click();
+    const dialog = page.getByRole("dialog");
+
+    await dialog.getByLabel("Business name*").fill("Keep Me Co");
+    await dialog.getByRole("combobox", { name: /Issuing LGU/i }).click();
+    await page.getByRole("option", { name: "Quezon City" }).click();
+    await dialog
+      .getByLabel("Business permit number*")
+      .fill(`QA-SA-${Date.now()}`);
+    await dialog.getByLabel("TIN number*").fill("000-1-2-3");
+    await dialog.getByRole("button", { name: "Add Business" }).click();
+
+    await expect(
+      dialog.getByText("Select a city from the top bar before adding a business."),
+    ).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Business name*")).toHaveValue("Keep Me Co");
   });
 });

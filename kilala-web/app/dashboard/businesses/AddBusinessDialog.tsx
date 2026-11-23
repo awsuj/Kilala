@@ -40,7 +40,7 @@ const emptyForm: FormState = {
 type Props = {
   lgus: Lgu[];
   existingPermits: string[];
-  onAdd: (input: NewBusinessInput) => void;
+  onAdd: (input: NewBusinessInput) => Promise<{ error?: string } | void>;
 };
 
 export default function AddBusinessDialog({
@@ -51,6 +51,8 @@ export default function AddBusinessDialog({
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Errors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const setField = (field: keyof FormState, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -60,6 +62,8 @@ export default function AddBusinessDialog({
     if (!next) {
       setForm(emptyForm);
       setErrors({});
+      setSubmitError(null);
+      setSubmitting(false);
     }
   };
 
@@ -77,19 +81,27 @@ export default function AddBusinessDialog({
     return e;
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const found = validate();
     if (Object.keys(found).length > 0) {
       setErrors(found);
       return;
     }
-    onAdd({
+    setSubmitError(null);
+    setSubmitting(true);
+    const res = await onAdd({
       businessName: form.businessName.trim(),
       issuingLgu: form.issuingLgu.trim(),
       permitNo: form.permitNo.trim(),
       tin: form.tin.trim(),
     });
+    setSubmitting(false);
+    // Keep the dialog open on a server error so the admin doesn't lose input.
+    if (res && res.error) {
+      setSubmitError(res.error);
+      return;
+    }
     handleOpenChange(false);
   };
 
@@ -178,6 +190,12 @@ export default function AddBusinessDialog({
               />
             </Field>
 
+            {submitError && (
+              <p role="alert" className="text-sm text-destructive">
+                {submitError}
+              </p>
+            )}
+
             <DialogFooter>
               <Button
                 type="button"
@@ -186,7 +204,9 @@ export default function AddBusinessDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit">Add Business</Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Adding…" : "Add Business"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

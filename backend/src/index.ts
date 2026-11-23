@@ -1413,8 +1413,11 @@ app.post(
       }
       const lgu_id = lguId!;
 
-      const slug = String(business_permit_no).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      const placeholderEmail = `unclaimed-${slug}@unclaimed.kilala`;
+      // Unique, non-guessable placeholder address. Must not be derived from the
+      // permit: slugging is lossy, so distinct permits could collide on the
+      // users.email UNIQUE and surface as a false "permit already exists" 409.
+      // Business-level dedupe is enforced by business_profiles.business_permit_no.
+      const placeholderEmail = `unclaimed-${crypto.randomUUID()}@unclaimed.kilala`;
       const randomHash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
 
       client = await pool.connect();

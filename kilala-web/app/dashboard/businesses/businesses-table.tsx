@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -47,6 +47,12 @@ export default function BusinessesTable({
   const [, startTransition] = useTransition();
   const accredited = rows.filter((r) => r.is_accredited).length;
 
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const toggle = (b: Business) => {
     setError(null);
     setPendingId(b.id);
@@ -57,17 +63,16 @@ export default function BusinessesTable({
     });
   };
 
-  const handleAdd = (input: NewBusinessInput) => {
+  // Returns the action result so the dialog can keep itself open and surface the
+  // error on failure; the table only toasts on success.
+  const handleAdd = async (input: NewBusinessInput) => {
     setError(null);
-    startTransition(async () => {
-      const res = await createBusiness(input);
-      if (res.error) {
-        setToast(res.error);
-      } else {
-        setToast(`${input.businessName} added`);
-        router.refresh();
-      }
-    });
+    const res = await createBusiness(input);
+    if (!res.error) {
+      setToast(`${input.businessName} added`);
+      router.refresh();
+    }
+    return res;
   };
 
   return (

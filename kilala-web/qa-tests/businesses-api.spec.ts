@@ -101,12 +101,40 @@ test.describe("LGU Add Business — POST /api/lgu/businesses", () => {
       },
     });
     expect(created.status()).toBe(201);
-    const slug = permit.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const email = `unclaimed-${slug}@unclaimed.kilala`;
+
+    // Pull the real placeholder email from the list (don't assume its format),
+    // confirm it's unclaimed, then prove that account cannot log in.
+    const list = await request.get(`${API_BASE_URL}/api/lgu/businesses`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const row = (await list.json()).find(
+      (b: { business_permit_no: string }) => b.business_permit_no === permit,
+    );
+    expect(row.is_active).toBe(false);
     const res = await request.post(`${API_BASE_URL}/api/auth/login`, {
-      data: { email, password: "anything" },
+      data: { email: row.email, password: "anything" },
     });
     expect(res.status()).not.toBe(200);
+  });
+
+  test("does not falsely reject distinct permits that slug-collide", async ({
+    request,
+  }) => {
+    const token = await login(request, ADMIN_EMAIL, ADMIN_PASSWORD);
+    const base = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const mk = (permit: string) =>
+      request.post(`${API_BASE_URL}/api/lgu/businesses`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+          business_name: "QA Collide",
+          business_permit_no: permit,
+          tin_number: "000-1-2-3",
+        },
+      });
+    // `AA.<base>` and `AA-<base>` are distinct permits that slug to the same
+    // string — they must both be accepted, not rejected as a false duplicate.
+    expect((await mk(`AA.${base}`)).status()).toBe(201);
+    expect((await mk(`AA-${base}`)).status()).toBe(201);
   });
 
   test("GET /api/lgu/businesses includes is_active for each row", async ({
