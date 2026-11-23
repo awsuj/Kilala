@@ -450,25 +450,37 @@ struct ChronologicalTransactionList: View {
         LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             ForEach(groups) { group in
                 Section {
-                    ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
-                        Button {
-                            onSelect(item)
-                        } label: {
-                            TransactionHistoryRow(
-                                item: item,
-                                showCardNumber: showCardNumber,
-                                showTimeOnly: true,
-                                horizontalPadding: 0
-                            )
-                        }
-                        .buttonStyle(.plain)
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
+                            Button {
+                                onSelect(item)
+                            } label: {
+                                TransactionHistoryRow(
+                                    item: item,
+                                    showCardNumber: showCardNumber,
+                                    showTimeOnly: true,
+                                    horizontalPadding: 16
+                                )
+                            }
+                            .buttonStyle(.plain)
 
-                        if itemIndex < group.items.count - 1 {
-                            Rectangle()
-                                .fill(Color.kilalaMint)
-                                .frame(height: 1)
+                            if itemIndex < group.items.count - 1 {
+                                Rectangle()
+                                    .fill(Color.kilalaMintBorder)
+                                    .frame(height: 1)
+                                    .padding(.leading, 16)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                    )
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
                 } header: {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(group.title)
@@ -492,13 +504,13 @@ struct ChronologicalTransactionList: View {
     }
 }
 
-// MARK: - Reusable Flat Transaction Row (Direct on kilalaPaper)
+// MARK: - Reusable Flat Transaction Row (Inside White Date-Group Container)
 
 struct TransactionHistoryRow: View {
     let item: TransactionHistoryItem
     var showCardNumber: Bool = false
     var showTimeOnly: Bool = true
-    var horizontalPadding: CGFloat = 0
+    var horizontalPadding: CGFloat = 16
 
     private var formattedTimestamp: String {
         showTimeOnly
