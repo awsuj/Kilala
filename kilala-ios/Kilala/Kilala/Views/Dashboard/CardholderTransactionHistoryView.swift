@@ -14,87 +14,73 @@ struct CardholderTransactionHistoryView: View {
 
     @State private var transactions: [CardholderTransactionHistoryItem] = []
     @State private var searchText: String = ""
-    @State private var selectedDates: [Date] = []
-    @State private var isCalendarPresented: Bool = false
+    @State private var filterStartDate: Date? = nil
+    @State private var filterEndDate: Date? = nil
+    @State private var isShowingDatePicker: Bool = false
+    @State private var selectedTransaction: CardholderTransactionHistoryItem? = nil
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
 
-    private var calendar: Calendar {
-        Calendar.current
+    private var hasActiveDateFilter: Bool {
+        filterStartDate != nil && filterEndDate != nil
     }
 
-    /// Selected calendar days normalized to start-of-day and sorted chronologically (0, 1, or 2 dates).
-    private var selectedDays: [Date] {
-        selectedDates
-            .map { calendar.startOfDay(for: $0) }
-            .sorted()
+    private var activeDateRangeLabel: String? {
+        guard let start = filterStartDate, let end = filterEndDate else { return nil }
+        return TransactionDateFormatting.formatRange(start: start, end: end)
     }
 
     private var filteredTransactions: [CardholderTransactionHistoryItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let activeDays = selectedDays
+        var result = transactions
 
-        return transactions.filter { item in
-            // 1. Merchant search filter
-            let matchesMerchant: Bool
-            if query.isEmpty {
-                matchesMerchant = true
-            } else {
-                matchesMerchant = item.businessName.localizedCaseInsensitiveContains(query) ||
-                    (item.branchName?.localizedCaseInsensitiveContains(query) ?? false)
-            }
+        if let start = filterStartDate, let end = filterEndDate {
+            let calendar = Calendar.current
+            let rangeStart = calendar.startOfDay(for: min(start, end))
+            let endDayStart = calendar.startOfDay(for: max(start, end))
+            let rangeEndExclusive = calendar.date(byAdding: .day, value: 1, to: endDayStart) ?? max(start, end)
 
-            guard matchesMerchant else { return false }
-
-            // 2. Date filter logic (0, 1, or 2 dates selected)
-            guard !activeDays.isEmpty else {
-                return true
-            }
-
-            guard let txDate = CardholderTransactionDateFormatting.parse(item.createdAt) else {
-                return false
-            }
-
-            let txDay = calendar.startOfDay(for: txDate)
-            if activeDays.count == 1 {
-                return calendar.isDate(txDay, inSameDayAs: activeDays[0])
-            } else {
-                let startDay = activeDays[0]
-                let endDay = activeDays[activeDays.count - 1]
-                return txDay >= startDay && txDay <= endDay
-            }
-        }
-    }
-
-    private struct DateTransactionSection: Identifiable {
-        let dayStart: Date
-        let title: String
-        let items: [CardholderTransactionHistoryItem]
-
-        var id: Date { dayStart }
-    }
-
-    /// Groups filtered transactions by calendar date, sorted newest date first.
-    private var groupedTransactionSections: [DateTransactionSection] {
-        var buckets: [Date: [CardholderTransactionHistoryItem]] = [:]
-
-        for item in filteredTransactions {
-            let parsedDate = CardholderTransactionDateFormatting.parse(item.createdAt) ?? .distantPast
-            let dayStart = calendar.startOfDay(for: parsedDate)
-            buckets[dayStart, default: []].append(item)
-        }
-
-        return buckets.keys
-            .sorted(by: >)
-            .map { dayStart in
-                let sortedItems = (buckets[dayStart] ?? []).sorted { lhs, rhs in
-                    let lhsDate = CardholderTransactionDateFormatting.parse(lhs.createdAt) ?? .distantPast
-                    let rhsDate = CardholderTransactionDateFormatting.parse(rhs.createdAt) ?? .distantPast
-                    return lhsDate > rhsDate
+            result = result.filter { item in
+                guard let txDate = TransactionDateFormatting.parse(item.createdAt) else {
+                    return false
                 }
-                return DateTransactionSection(
-                    dayStart: dayStart,
-                    title: CardholderTransactionDateFormatting.formatSectionDate(dayStart),
+                return txDate >= rangeStart && txDate < rangeEndExclusive
+            }
+        }
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return result }
+        return result.filter { item in
+            item.businessName.localizedCaseInsensitiveContains(query) ||
+            (item.branchName?.localizedCaseInsensitiveContains(query) ?? false) ||
+            item.formattedCategory.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var groupedTransactions: [CardholderTransactionDateGroup] {
+        Self.groupByDate(filteredTransactions)
+    }
+
+    private static func groupByDate(
+        _ items: [CardholderTransactionHistoryItem],
+        calendar: Calendar = .current
+    ) -> [CardholderTransactionDateGroup] {
+        var buckets: [Date: [(item: CardholderTransactionHistoryItem, timestamp: Date)]] = [:]
+
+        for item in items {
+            let parsedDate = TransactionDateFormatting.parse(item.createdAt) ?? Date.distantPast
+            let dayStart = calendar.startOfDay(for: parsedDate)
+            buckets[dayStart, default: []].append((item: item, timestamp: parsedDate))
+        }
+
+        return buckets
+            .sorted { $0.key > $1.key }
+            .map { dayStart, entries in
+                let sortedItems = entries
+                    .sorted { $0.timestamp > $1.timestamp }
+                    .map(\.item)
+                return CardholderTransactionDateGroup(
+                    date: dayStart,
+                    title: TransactionDateFormatting.sectionHeaderTitle(for: dayStart, calendar: calendar),
                     items: sortedItems
                 )
             }
@@ -105,38 +91,51 @@ struct CardholderTransactionHistoryView: View {
             Color.kilalaPaper
                 .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Fixed Header & Search/Calendar Bar above ScrollView
+                VStack(alignment: .leading, spacing: 14) {
                     if showBrandLogo {
                         BusinessPortalHeader(title: "Transactions")
                     }
 
-                    // Single-line Search & Calendar Filter Bar
-                    topFilterBar
+                    // Search & Date Filter Bar (12pt radius)
+                    VStack(alignment: .leading, spacing: 10) {
+                        searchBar
 
-                    if isCalendarPresented {
-                        calendarPickerCard
-                    }
-
-                    if let errorMessage = errorMessage {
-                        errorBanner(message: errorMessage)
-                    }
-
-                    if isLoading && transactions.isEmpty {
-                        loadingCard
-                    } else if filteredTransactions.isEmpty {
-                        emptyStateCard
-                    } else {
-                        dateSeparatedTransactionsList
+                        if let rangeLabel = activeDateRangeLabel {
+                            activeDateFilterChip(label: rangeLabel)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 96)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                await loadTransactions()
+                .padding(.bottom, 8)
+                .background(Color.kilalaPaper)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let errorMessage = errorMessage {
+                            errorBanner(message: errorMessage)
+                                .padding(.top, 8)
+                        }
+
+                        if isLoading && transactions.isEmpty {
+                            loadingCard
+                                .padding(.top, 8)
+                        } else if filteredTransactions.isEmpty {
+                            emptyStateCard
+                                .padding(.top, 8)
+                        } else {
+                            transactionsListSection
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 96)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .refreshable {
+                    await loadTransactions()
+                }
             }
         }
         .navigationTitle("Transactions")
@@ -146,229 +145,261 @@ struct CardholderTransactionHistoryView: View {
         .task {
             await loadTransactions()
         }
+        .sheet(isPresented: $isShowingDatePicker) {
+            CardholderTransactionDateRangeSheet(
+                initialStartDate: filterStartDate,
+                initialEndDate: filterEndDate,
+                onReset: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        filterStartDate = nil
+                        filterEndDate = nil
+                    }
+                    Task {
+                        await loadTransactions()
+                    }
+                },
+                onApply: { start, end in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        filterStartDate = start
+                        filterEndDate = end
+                    }
+                    Task {
+                        await loadTransactions()
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(16)
+            .presentationBackground(Color.kilalaPaper)
+        }
+        .sheet(item: $selectedTransaction) { item in
+            CardholderTransactionDetailSheet(transaction: item)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
-    // MARK: - Top Search & Calendar Filter Bar (Single Line Only)
+    // MARK: - Search & Date Filter
 
-    private var topFilterBar: some View {
-        HStack(spacing: 10) {
-            // Merchant Search Bar
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.kilalaInkSecondary)
-                    .accessibilityHidden(true)
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.kilalaInkSecondary)
+                .accessibilityHidden(true)
 
-                TextField("Search by merchant name", text: $searchText)
-                    .font(.kilala(.callout))
-                    .foregroundColor(.kilalaInk)
-                    .tint(.kilalaGreen)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+            TextField("Search by merchant name", text: $searchText)
+                .font(.kilala(.callout))
+                .foregroundColor(.kilalaInk)
+                .tint(.kilalaGreen)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
 
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.kilalaInkMuted)
-                    }
-                    .accessibilityLabel("Clear search")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.kilalaInkMuted)
                 }
+                .accessibilityLabel("Clear search")
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 46)
-            .frame(maxWidth: .infinity)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
-            )
 
-            // Calendar Filter Icon Button (No inline date text inputs)
-            let hasActiveDateFilter = !selectedDays.isEmpty
+            Rectangle()
+                .fill(Color.kilalaMintBorder)
+                .frame(width: 1, height: 22)
+                .accessibilityHidden(true)
+
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isCalendarPresented.toggle()
-                }
+                isShowingDatePicker = true
             } label: {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(
-                            (isCalendarPresented || hasActiveDateFilter) ? .white : .kilalaInk
-                        )
-                        .frame(width: 46, height: 46)
+                    Image(systemName: hasActiveDateFilter ? "calendar.badge.clock" : "calendar")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(hasActiveDateFilter ? .kilalaGreen : .kilalaInk)
+                        .frame(width: 34, height: 34)
                         .background(
-                            (isCalendarPresented || hasActiveDateFilter)
-                                ? Color.kilalaGreen
-                                : Color.white
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(
-                                    (isCalendarPresented || hasActiveDateFilter)
-                                        ? Color.kilalaGreen
-                                        : Color.kilalaMintBorder,
-                                    lineWidth: 1
-                                )
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(hasActiveDateFilter ? Color.kilalaGreen.opacity(0.12) : Color.kilalaPaper)
                         )
 
                     if hasActiveDateFilter {
-                        Text("\(selectedDays.count)")
-                            .font(.kilala(size: 11, weight: .bold, relativeTo: .caption2))
-                            .foregroundColor(.kilalaInk)
-                            .frame(width: 18, height: 18)
-                            .background(Color.kilalaSunrise)
-                            .clipShape(Circle())
-                            .offset(x: 4, y: -4)
+                        Circle()
+                            .fill(Color.kilalaSunrise)
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white, lineWidth: 1.5)
+                            )
+                            .offset(x: 2, y: -2)
                     }
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Filter by date")
+            .accessibilityLabel(hasActiveDateFilter ? "Date filter active" : "Filter by date range")
+            .accessibilityHint("Opens date range selector")
         }
-    }
-
-    // MARK: - Expandable Calendar Picker Card
-
-    private var dateFilterSummaryText: String {
-        let days = selectedDays
-        switch days.count {
-        case 0:
-            return "Select 1 date or 2 dates for a range"
-        case 1:
-            return CardholderTransactionDateFormatting.formatSectionDate(days[0])
-        default:
-            let start = CardholderTransactionDateFormatting.formatShortDate(days[0])
-            let end = CardholderTransactionDateFormatting.formatShortDate(days[days.count - 1])
-            return "\(start) – \(end)"
-        }
-    }
-
-    private var calendarPickerCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center) {
-                Text(dateFilterSummaryText)
-                    .font(.kilala(.footnote, weight: .semibold))
-                    .foregroundColor(.kilalaInkSecondary)
-                    .lineLimit(1)
-
-                Spacer()
-
-                if !selectedDates.isEmpty {
-                    Button("Clear") {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            selectedDates.removeAll()
-                        }
-                    }
-                    .font(.kilala(.footnote, weight: .bold))
-                    .foregroundColor(.kilalaGreen)
-                }
-            }
-
-            Divider()
-                .overlay(Color.kilalaMintBorder)
-
-            CardholderRangeCalendarView(selectedDates: $selectedDates)
-        }
-        .padding(14)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .frame(minHeight: 46)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(hasActiveDateFilter ? Color.kilalaGreen.opacity(0.45) : Color.kilalaMintBorder, lineWidth: 1)
         )
     }
 
-    // MARK: - Date-Separated Transaction List
+    private func activeDateFilterChip(label: String) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
+                    .accessibilityHidden(true)
 
-    private var dateSeparatedTransactionsList: some View {
-        LazyVStack(alignment: .leading, spacing: 16) {
-            ForEach(groupedTransactionSections) { section in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(section.title)
-                        .font(.kilala(.subheadline, weight: .bold))
-                        .foregroundColor(.kilalaInkSecondary)
-                        .padding(.horizontal, 4)
+                Text(label)
+                    .font(.kilala(.footnote, weight: .bold))
+                    .foregroundColor(.kilalaInk)
+                    .lineLimit(1)
 
-                    VStack(spacing: 0) {
-                        ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
-                            CardholderTransactionHistoryRow(item: item)
-
-                            if index < section.items.count - 1 {
-                                Divider()
-                                    .overlay(Color.kilalaMintBorder)
-                                    .padding(.leading, 16)
-                            }
-                        }
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        filterStartDate = nil
+                        filterEndDate = nil
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.kilalaMintBorder, lineWidth: 1)
-                    )
+                    Task {
+                        await loadTransactions()
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.kilalaGreen)
+                        .frame(width: 20, height: 20)
+                        .background(Color.kilalaGreen.opacity(0.14))
+                        .clipShape(Circle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear date filter")
             }
+            .padding(.leading, 10)
+            .padding(.trailing, 6)
+            .padding(.vertical, 6)
+            .background(Color.kilalaMint)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+            )
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Chronological Date-Grouped Timeline
+
+    private var transactionsListSection: some View {
+        CardholderChronologicalTransactionList(groups: groupedTransactions) { item in
+            selectedTransaction = item
         }
     }
 
     // MARK: - Loading, Empty & Error States
 
     private var loadingCard: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .tint(.kilalaGreen)
-            Text("Loading transactions...")
-                .font(.kilala(.callout))
-                .foregroundColor(.kilalaInkSecondary)
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaMint)
+                .frame(height: 1)
+
+            HStack(spacing: 12) {
+                ProgressView()
+                    .tint(.kilalaGreen)
+                Text("Loading transactions...")
+                    .font(.kilala(.callout))
+                    .foregroundColor(.kilalaInkSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 36)
+            .padding(.horizontal, 16)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-        .padding(.horizontal, 16)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
+        .background(Color.kilalaPaper)
     }
 
     private var emptyStateCard: some View {
-        let isFiltering = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selectedDays.isEmpty
-        return VStack(spacing: 8) {
-            Image(systemName: isFiltering ? "magnifyingglass" : "receipt")
-                .font(.system(size: 28))
-                .foregroundColor(.kilalaInkMuted)
-                .accessibilityHidden(true)
+        let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasAnyFilter = isSearching || hasActiveDateFilter
 
-            Text(isFiltering ? "No matching transactions" : "No Transactions Yet")
-                .font(.kilala(.headline, weight: .bold))
-                .foregroundColor(.kilalaInk)
+        let iconName: String = {
+            if isSearching { return "magnifyingglass" }
+            if hasActiveDateFilter { return "calendar.badge.exclamationmark" }
+            return "receipt"
+        }()
 
-            Text(
-                isFiltering
-                    ? "Try a different merchant name or adjust your selected date filter."
-                    : "Your 20% statutory discount transactions will appear here."
-            )
-            .font(.kilala(.subheadline))
-            .foregroundColor(.kilalaInkSecondary)
-            .multilineTextAlignment(.center)
+        let titleText: String = {
+            if hasAnyFilter { return "No matching transactions" }
+            return "No verified discounts in this period"
+        }()
+
+        let subtitleText: String = {
+            if isSearching && hasActiveDateFilter {
+                return "Try adjusting your search query or selected date range."
+            } else if hasActiveDateFilter {
+                return "No transactions were recorded in the selected date range."
+            } else if isSearching {
+                return "Try a different merchant name or category."
+            } else {
+                return "Recorded 20% statutory discount transactions will appear here."
+            }
+        }()
+
+        return VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaMint)
+                .frame(height: 1)
+
+            VStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.system(size: 28))
+                    .foregroundColor(.kilalaInkMuted)
+                    .accessibilityHidden(true)
+
+                Text(titleText)
+                    .font(.kilala(.headline, weight: .bold))
+                    .foregroundColor(.kilalaInk)
+                    .multilineTextAlignment(.center)
+
+                Text(subtitleText)
+                    .font(.kilala(.subheadline))
+                    .foregroundColor(.kilalaInkSecondary)
+                    .multilineTextAlignment(.center)
+
+                if hasActiveDateFilter {
+                    Button("Reset Date Filter") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            filterStartDate = nil
+                            filterEndDate = nil
+                        }
+                        Task {
+                            await loadTransactions()
+                        }
+                    }
+                    .font(.kilala(.footnote, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.kilalaMint)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.top, 6)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 36)
+            .padding(.horizontal, 16)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-        .padding(.horizontal, 16)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.kilalaMintBorder, lineWidth: 1)
-        )
+        .background(Color.kilalaPaper)
     }
 
     private func errorBanner(message: String) -> some View {
@@ -414,7 +445,11 @@ struct CardholderTransactionHistoryView: View {
 
         do {
             let activeToken = token.isEmpty ? (APIService.shared.authToken ?? "") : token
-            transactions = try await APIService.shared.fetchCardholderTransactions(token: activeToken)
+            transactions = try await APIService.shared.fetchCardholderTransactions(
+                token: activeToken,
+                startDate: filterStartDate,
+                endDate: filterEndDate
+            )
             isLoading = false
         } catch is CancellationError {
             // Task cancelled
@@ -425,18 +460,92 @@ struct CardholderTransactionHistoryView: View {
     }
 }
 
-// MARK: - Cardholder Transaction Row
+// MARK: - Chronological Date-Grouped Timeline (Paper-and-Mint)
+
+struct CardholderTransactionDateGroup: Identifiable {
+    let date: Date
+    let title: String
+    let items: [CardholderTransactionHistoryItem]
+
+    var id: Date { date }
+}
+
+struct CardholderChronologicalTransactionList: View {
+    let groups: [CardholderTransactionDateGroup]
+    let onSelect: (CardholderTransactionHistoryItem) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(groups) { group in
+                Section {
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
+                            Button {
+                                onSelect(item)
+                            } label: {
+                                CardholderTransactionHistoryRow(
+                                    item: item,
+                                    showTimeOnly: true,
+                                    horizontalPadding: 16
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            if itemIndex < group.items.count - 1 {
+                                Rectangle()
+                                    .fill(Color.kilalaMintBorder)
+                                    .frame(height: 1)
+                                    .padding(.leading, 16)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                    )
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
+                } header: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(group.title)
+                            .font(.kilala(size: 17, weight: .bold, relativeTo: .headline))
+                            .foregroundColor(.kilalaGreen)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 14)
+                            .padding(.bottom, 8)
+
+                        Rectangle()
+                            .fill(Color.kilalaMintBorder)
+                            .frame(height: 1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.kilalaPaper)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.kilalaPaper)
+    }
+}
+
+// MARK: - Reusable Flat Transaction Row (Inside White Date-Group Container)
 
 struct CardholderTransactionHistoryRow: View {
     let item: CardholderTransactionHistoryItem
+    var showTimeOnly: Bool = true
+    var horizontalPadding: CGFloat = 16
 
     private var formattedTimestamp: String {
-        CardholderTransactionDateFormatting.formatRowTimestamp(item.createdAt)
+        showTimeOnly
+            ? TransactionDateFormatting.formatTimeOnly(item.createdAt)
+            : TransactionDateFormatting.formatCompact(item.createdAt)
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // Left Side: Merchant name in bold, with "Month Day, Time" directly below it
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.businessName)
                     .font(.kilala(size: 16, weight: .bold, relativeTo: .callout))
@@ -451,7 +560,6 @@ struct CardholderTransactionHistoryRow: View {
 
             Spacer(minLength: 8)
 
-            // Right Side: Discounted total in bold ("₱XX.XX"), with "From ₱XX.XX" directly below it
             VStack(alignment: .trailing, spacing: 4) {
                 Text(String(format: "₱%.2f", item.discountedAmount))
                     .font(.kilala(size: 16, weight: .bold, relativeTo: .callout))
@@ -463,331 +571,441 @@ struct CardholderTransactionHistoryRow: View {
                     .foregroundColor(.kilalaInkSecondary)
                     .lineLimit(1)
             }
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.kilalaInkMuted)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
         .frame(minHeight: 60)
         .contentShape(Rectangle())
     }
 }
 
-// MARK: - Cardholder Transaction Date Formatting
+// MARK: - Cardholder Transaction Detail Sheet (Single Crisp 16pt White Audit Card)
 
-enum CardholderTransactionDateFormatting {
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+struct CardholderTransactionDetailSheet: View {
+    let transaction: CardholderTransactionHistoryItem
+    @Environment(\.dismiss) private var dismiss
 
-    private static let isoStandard: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
-    private static let rowFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.amSymbol = "AM"
-        formatter.pmSymbol = "PM"
-        formatter.dateFormat = "MMM d, hh:mm a"
-        return formatter
-    }()
-
-    private static let sectionDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM d, yyyy"
-        return formatter
-    }()
-
-    private static let shortDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter
-    }()
-
-    static func parse(_ isoString: String) -> Date? {
-        isoFractional.date(from: isoString) ?? isoStandard.date(from: isoString)
-    }
-
-    /// Formats row subtitle as "Month Day, Time" where Month is max 3 chars and Time is HH:MM AM/PM (e.g., "Nov 23, 02:30 PM").
-    static func formatRowTimestamp(_ isoString: String) -> String {
-        guard let date = parse(isoString) else { return isoString }
-        return rowFormatter.string(from: date)
-    }
-
-    static func formatSectionDate(_ date: Date) -> String {
-        sectionDateFormatter.string(from: date)
-    }
-
-    static func formatShortDate(_ date: Date) -> String {
-        shortDateFormatter.string(from: date)
-    }
-}
-
-// MARK: - Range-Highlighting Calendar Picker
-
-struct CardholderRangeCalendarView: View {
-    @Binding var selectedDates: [Date]
-
-    @State private var displayedMonth: Date = {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.year, .month], from: Date())
-        return cal.date(from: comps) ?? Date()
-    }()
-
-    private var calendar: Calendar {
-        Calendar.current
-    }
-
-    private let weekdayHeaders = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
-
-    private static let monthTitleFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter
-    }()
-
-    private var sortedSelectedDays: [Date] {
-        selectedDates
-            .map { calendar.startOfDay(for: $0) }
-            .sorted()
-    }
-
-    private struct CalendarCellItem: Identifiable {
-        let id: String
-        let date: Date?
-        let dayNumber: Int
-        let columnIndex: Int
-        let isFirstDayOfMonth: Bool
-        let isLastDayOfMonth: Bool
-    }
-
-    private var monthCells: [CalendarCellItem] {
-        guard let monthStart = calendar.date(
-            from: calendar.dateComponents([.year, .month], from: displayedMonth)
-        ),
-        let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else {
-            return []
+    private var branchDisplayText: String {
+        if let branch = transaction.branchName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !branch.isEmpty {
+            return branch
         }
+        return "Main Branch"
+    }
 
-        let firstWeekday = calendar.component(.weekday, from: monthStart) // 1 = Sunday ... 7 = Saturday
-        let leadingEmptyCount = max(0, firstWeekday - 1)
-        let totalDays = dayRange.count
-
-        var items: [CalendarCellItem] = []
-
-        for emptyIndex in 0..<leadingEmptyCount {
-            items.append(
-                CalendarCellItem(
-                    id: "empty-\(emptyIndex)",
-                    date: nil,
-                    dayNumber: 0,
-                    columnIndex: emptyIndex % 7,
-                    isFirstDayOfMonth: false,
-                    isLastDayOfMonth: false
-                )
-            )
+    private var categoryBadge: (icon: String, fill: Color, foreground: Color) {
+        let raw = (transaction.category ?? transaction.businessCategory ?? "").uppercased()
+        switch raw {
+        case "PHARMACY":
+            return ("cross.case.fill", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        case "RESTAURANT":
+            return ("fork.knife", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        case "GROCERY":
+            return ("cart.fill", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        case "TRANSPORT":
+            return ("bus.fill", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        case "MEDICAL":
+            return ("stethoscope", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        case "ENTERTAINMENT":
+            return ("ticket.fill", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        default:
+            return ("building.2.fill", Color.kilalaMint, .kilalaInk)
         }
-
-        for day in 1...totalDays {
-            let offsetIndex = leadingEmptyCount + (day - 1)
-            let dayDate = calendar.date(byAdding: .day, value: day - 1, to: monthStart).map {
-                calendar.startOfDay(for: $0)
-            }
-            items.append(
-                CalendarCellItem(
-                    id: "day-\(day)",
-                    date: dayDate,
-                    dayNumber: day,
-                    columnIndex: offsetIndex % 7,
-                    isFirstDayOfMonth: day == 1,
-                    isLastDayOfMonth: day == totalDays
-                )
-            )
-        }
-
-        return items
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Month Header & Navigation Chevrons
-            HStack(alignment: .center) {
-                Text(Self.monthTitleFormatter.string(from: displayedMonth))
-                    .font(.kilala(.callout, weight: .bold))
-                    .foregroundColor(.kilalaInk)
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Button {
-                        shiftMonth(by: -1)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.kilalaGreen)
-                            .frame(width: 32, height: 32)
-                            .background(Color.kilalaPaper)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Previous month")
-
-                    Button {
-                        shiftMonth(by: 1)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.kilalaGreen)
-                            .frame(width: 32, height: 32)
-                            .background(Color.kilalaPaper)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Next month")
-                }
-            }
-
-            // Weekday Header Labels
-            LazyVGrid(columns: gridColumns, spacing: 0) {
-                ForEach(weekdayHeaders, id: \.self) { label in
-                    Text(label)
-                        .font(.kilala(size: 11, weight: .bold, relativeTo: .caption2))
-                        .foregroundColor(.kilalaInkMuted)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 24)
-                }
-            }
-
-            // Days Grid with Continuous Range Highlighting
-            LazyVGrid(columns: gridColumns, spacing: 6) {
-                ForEach(monthCells) { cell in
-                    if let dayDate = cell.date {
-                        dayCellView(for: cell, dayDate: dayDate)
-                    } else {
-                        Color.clear
-                            .frame(height: 38)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func dayCellView(for cell: CalendarCellItem, dayDate: Date) -> some View {
-        let sorted = sortedSelectedDays
-        let isStart = !sorted.isEmpty && calendar.isDate(dayDate, inSameDayAs: sorted[0])
-        let isEnd = sorted.count >= 2 && calendar.isDate(dayDate, inSameDayAs: sorted[sorted.count - 1])
-        let isEndpoint = isStart || isEnd
-        let hasRange = sorted.count >= 2 && !calendar.isDate(sorted[0], inSameDayAs: sorted[sorted.count - 1])
-        let isInRange = hasRange && dayDate > sorted[0] && dayDate < sorted[sorted.count - 1]
-        let isToday = calendar.isDateInToday(dayDate)
-
-        let roundLeftCap = cell.columnIndex == 0 || cell.isFirstDayOfMonth
-        let roundRightCap = cell.columnIndex == 6 || cell.isLastDayOfMonth
-        let rangeHighlightColor = Color.kilalaGreen.opacity(0.16)
-
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                handleTap(on: dayDate)
-            }
-        } label: {
+        NavigationStack {
             ZStack {
-                // Continuous Range Highlight Strip (when 2 dates are picked)
-                if hasRange {
-                    if isInRange {
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: roundLeftCap ? 18 : 0,
-                            bottomLeadingRadius: roundLeftCap ? 18 : 0,
-                            bottomTrailingRadius: roundRightCap ? 18 : 0,
-                            topTrailingRadius: roundRightCap ? 18 : 0,
-                            style: .continuous
-                        )
-                        .fill(rangeHighlightColor)
-                        .frame(height: 36)
-                    } else if isStart && !roundRightCap {
-                        HStack(spacing: 0) {
-                            Color.clear
-                            Rectangle()
-                                .fill(rangeHighlightColor)
+                Color.kilalaPaper
+                    .ignoresSafeArea()
+
+                ScrollView(showsIndicators: false) {
+                    // Single Flat White 16pt Audit Card (No Nested Cards)
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Verification Status Header (Icon + Word + Brand State Color)
+                        HStack {
+                            KilalaStatusBadge(
+                                icon: "checkmark.seal.fill",
+                                label: "Verified",
+                                foreground: .kilalaStateValid,
+                                background: Color.kilalaStateValid.opacity(0.12),
+                                cornerRadius: 8
+                            )
+
+                            Spacer()
                         }
-                        .frame(height: 36)
-                    } else if isEnd && !roundLeftCap {
-                        HStack(spacing: 0) {
-                            Rectangle()
-                                .fill(rangeHighlightColor)
-                            Color.clear
+
+                        // Merchant Identity
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("MERCHANT")
+                                .font(.kilala(.caption, weight: .bold))
+                                .tracking(0.8)
+                                .foregroundColor(.kilalaInkSecondary)
+
+                            Text(transaction.businessName)
+                                .font(.kilala(size: 22, weight: .bold, relativeTo: .title2))
+                                .foregroundColor(.kilalaInk)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .frame(height: 36)
+
+                        // Prominent Branch Strip (Tinted strip matching BusinessTransactionDetailSheet)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("BRANCH")
+                                .font(.kilala(.caption, weight: .bold))
+                                .tracking(0.8)
+                                .foregroundColor(.kilalaInkSecondary)
+
+                            Text(branchDisplayText)
+                                .font(.kilala(.title3, weight: .bold))
+                                .foregroundColor(.kilalaInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color.kilalaPaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        Divider()
+                            .overlay(Color.kilalaMintBorder)
+
+                        // Audit Metadata Rows
+                        VStack(spacing: 12) {
+                            HStack(alignment: .center) {
+                                Text("Category")
+                                    .font(.kilala(.subheadline))
+                                    .foregroundColor(.kilalaInkSecondary)
+
+                                Spacer()
+
+                                KilalaStatusBadge(
+                                    icon: categoryBadge.icon,
+                                    label: transaction.formattedCategory,
+                                    foreground: categoryBadge.foreground,
+                                    background: categoryBadge.fill,
+                                    cornerRadius: 8
+                                )
+                            }
+
+                            detailRow(
+                                label: "Timestamp",
+                                value: TransactionDateFormatting.formatFull(transaction.createdAt)
+                            )
+                        }
+
+                        Divider()
+                            .overlay(Color.kilalaMintBorder)
+
+                        // Payment & Discount Audit Breakdown
+                        VStack(spacing: 12) {
+                            detailRow(
+                                label: "Gross Amount",
+                                value: String(format: "₱%.2f", transaction.originalAmount)
+                            )
+
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("20% Discount Granted")
+                                    .font(.kilala(.subheadline))
+                                    .foregroundColor(.kilalaInkSecondary)
+
+                                Spacer()
+
+                                Text(String(format: "−₱%.2f", transaction.discountAmount))
+                                    .font(.kilala(.callout, weight: .bold))
+                                    .foregroundColor(.kilalaGreen)
+                            }
+
+                            Divider()
+                                .overlay(Color.kilalaMintBorder)
+
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("Net Total")
+                                    .font(.kilala(.callout, weight: .bold))
+                                    .foregroundColor(.kilalaInk)
+
+                                Spacer()
+
+                                Text(String(format: "₱%.2f", transaction.discountedAmount))
+                                    .font(.kilala(size: 22, weight: .bold, relativeTo: .title2))
+                                    .foregroundColor(.kilalaInk)
+                            }
+                        }
                     }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
+                }
+            }
+            .navigationTitle("Transaction Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.kilalaPaper, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.kilala(.subheadline, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
+                }
+            }
+        }
+    }
+
+    private func detailRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.kilala(.subheadline))
+                .foregroundColor(.kilalaInkSecondary)
+
+            Spacer()
+
+            Text(value)
+                .font(.kilala(.callout, weight: .semibold))
+                .foregroundColor(.kilalaInk)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}
+
+// MARK: - Date Range Picker Sheet (Paper-and-Mint)
+
+private struct CardholderTransactionDateRangeSheet: View {
+    enum DatePreset: String, CaseIterable, Identifiable {
+        case today = "Today"
+        case yesterday = "Yesterday"
+        case thisWeek = "This Week"
+        case thisMonth = "This Month"
+
+        var id: String { rawValue }
+
+        func dateRange(calendar: Calendar = .current, now: Date = Date()) -> (start: Date, end: Date) {
+            let todayStart = calendar.startOfDay(for: now)
+            switch self {
+            case .today:
+                return (todayStart, now)
+            case .yesterday:
+                let yesterday = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+                return (yesterday, yesterday)
+            case .thisWeek:
+                let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? todayStart
+                return (weekStart, now)
+            case .thisMonth:
+                let monthStart = calendar.dateInterval(of: .month, for: now)?.start ?? todayStart
+                return (monthStart, now)
+            }
+        }
+    }
+
+    let initialStartDate: Date?
+    let initialEndDate: Date?
+    let onReset: () -> Void
+    let onApply: (Date, Date) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draftStartDate: Date
+    @State private var draftEndDate: Date
+
+    init(
+        initialStartDate: Date?,
+        initialEndDate: Date?,
+        onReset: @escaping () -> Void,
+        onApply: @escaping (Date, Date) -> Void
+    ) {
+        self.initialStartDate = initialStartDate
+        self.initialEndDate = initialEndDate
+        self.onReset = onReset
+        self.onApply = onApply
+
+        let today = Date()
+        let start = min(initialStartDate ?? today, today)
+        let end = min(max(initialEndDate ?? today, start), today)
+        _draftStartDate = State(initialValue: start)
+        _draftEndDate = State(initialValue: end)
+    }
+
+    private func isPresetSelected(_ preset: DatePreset) -> Bool {
+        let calendar = Calendar.current
+        let range = preset.dateRange(calendar: calendar)
+        return calendar.isDate(draftStartDate, inSameDayAs: range.start)
+            && calendar.isDate(draftEndDate, inSameDayAs: range.end)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.kilalaPaper
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                // Sheet Header
+                HStack(alignment: .center, spacing: 12) {
+                    Text("Select Date Range")
+                        .font(.kilala(size: 20, weight: .bold, relativeTo: .title3))
+                        .foregroundColor(.kilalaInk)
+
+                    Spacer()
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.kilalaInkSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                 }
 
-                // Endpoint Circle or Today Ring
-                if isEndpoint {
-                    Circle()
-                        .fill(Color.kilalaGreen)
-                        .frame(width: 36, height: 36)
-                } else if isToday && !isInRange {
-                    Circle()
-                        .stroke(Color.kilalaGreen, lineWidth: 1.2)
-                        .frame(width: 36, height: 36)
+                // Quick-Select Preset Chips
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(DatePreset.allCases) { preset in
+                            let selected = isPresetSelected(preset)
+                            Button {
+                                let range = preset.dateRange()
+                                draftStartDate = range.start
+                                draftEndDate = range.end
+                            } label: {
+                                Text(preset.rawValue)
+                                    .font(.kilala(.footnote, weight: .bold))
+                                    .foregroundColor(selected ? .white : .kilalaInk)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(selected ? Color.kilalaGreen : Color.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(selected ? Color.kilalaGreen : Color.kilalaMintBorder, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
 
-                // Day Number Label
-                Text("\(cell.dayNumber)")
-                    .font(
-                        .kilala(
-                            .subheadline,
-                            weight: (isEndpoint || isInRange || isToday) ? .bold : .medium
+                // Start & End Date Pickers Card (16pt Paper-and-Mint Container)
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        Label("Start Date", systemImage: "calendar")
+                            .font(.kilala(.callout, weight: .semibold))
+                            .foregroundColor(.kilalaInk)
+
+                        Spacer()
+
+                        DatePicker(
+                            "Start Date",
+                            selection: $draftStartDate,
+                            in: ...Date(),
+                            displayedComponents: .date
                         )
-                    )
-                    .foregroundColor(
-                        isEndpoint
-                            ? .white
-                            : (isInRange || isToday ? .kilalaGreen : .kilalaInk)
-                    )
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                        .tint(.kilalaGreen)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+
+                    Divider()
+                        .overlay(Color.kilalaMintBorder)
+                        .padding(.leading, 16)
+
+                    HStack(spacing: 12) {
+                        Label("End Date", systemImage: "calendar.badge.clock")
+                            .font(.kilala(.callout, weight: .semibold))
+                            .foregroundColor(.kilalaInk)
+
+                        Spacer()
+
+                        DatePicker(
+                            "End Date",
+                            selection: $draftEndDate,
+                            in: ...Date(),
+                            displayedComponents: .date
+                        )
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                        .tint(.kilalaGreen)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                )
+
+                Spacer(minLength: 4)
+
+                // Reset & Apply Actions
+                HStack(spacing: 12) {
+                    Button {
+                        onReset()
+                        dismiss()
+                    } label: {
+                        Text("Reset Filter")
+                            .font(.kilala(.callout, weight: .bold))
+                            .foregroundColor(.kilalaInk)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 48)
+                            .background(Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        let start = min(draftStartDate, draftEndDate)
+                        let end = max(draftStartDate, draftEndDate)
+                        onApply(start, end)
+                        dismiss()
+                    } label: {
+                        Text("Apply Filter")
+                            .font(.kilala(.callout, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 48)
+                            .background(Color.kilalaGreen)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 38)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
         }
-        .buttonStyle(.plain)
-    }
-
-    private func shiftMonth(by offset: Int) {
-        if let nextMonth = calendar.date(byAdding: .month, value: offset, to: displayedMonth) {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                displayedMonth = nextMonth
+        .onChange(of: draftStartDate) { _, newStart in
+            if newStart > draftEndDate {
+                draftEndDate = newStart
             }
         }
-    }
-
-    private func handleTap(on dayDate: Date) {
-        let normalized = calendar.startOfDay(for: dayDate)
-        let current = sortedSelectedDays
-
-        switch current.count {
-        case 0:
-            selectedDates = [normalized]
-        case 1:
-            if calendar.isDate(normalized, inSameDayAs: current[0]) {
-                selectedDates = []
-            } else {
-                selectedDates = [current[0], normalized].sorted()
-            }
-        default:
-            if calendar.isDate(normalized, inSameDayAs: current[0]) {
-                selectedDates = [current[current.count - 1]]
-            } else if calendar.isDate(normalized, inSameDayAs: current[current.count - 1]) {
-                selectedDates = [current[0]]
-            } else {
-                selectedDates = [normalized]
+        .onChange(of: draftEndDate) { _, newEnd in
+            if newEnd < draftStartDate {
+                draftStartDate = newEnd
             }
         }
     }

@@ -19,12 +19,24 @@ struct CardholderTransactionHistoryItem: Codable, Identifiable {
     let cardholderId: UUID?
     let businessName: String
     let branchName: String?
+    let category: String?
+    let businessCategory: String?
     let originalAmount: Double
     let discountedAmount: Double
     let createdAt: String
 
     var discountAmount: Double {
         max(0, originalAmount - discountedAmount)
+    }
+
+    var formattedCategory: String {
+        let raw = (category ?? businessCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else {
+            return "Other"
+        }
+        return raw
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
     }
 }
 
@@ -476,11 +488,35 @@ class APIService {
         return summary.transactions ?? []
     }
 
-    func fetchCardholderTransactions(token: String? = nil) async throws -> [CardholderTransactionHistoryItem] {
+    func fetchCardholderTransactions(
+        token: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil
+    ) async throws -> [CardholderTransactionHistoryItem] {
         if let token, !token.isEmpty {
             self.authToken = token
         }
-        guard let url = URL(string: "\(baseURL)/transactions/cardholder") else {
+        var components = URLComponents(string: "\(baseURL)/transactions/cardholder")
+        var queryItems: [URLQueryItem] = []
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        if let startDate {
+            let startOfDay = Calendar.current.startOfDay(for: startDate)
+            queryItems.append(URLQueryItem(name: "startDate", value: isoFormatter.string(from: startOfDay)))
+        }
+        if let endDate {
+            let startOfEndDay = Calendar.current.startOfDay(for: endDate)
+            let endOfDay = Calendar.current.date(byAdding: DateComponents(day: 1, second: -1), to: startOfEndDay) ?? endDate
+            queryItems.append(URLQueryItem(name: "endDate", value: isoFormatter.string(from: endOfDay)))
+        }
+
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+
+        guard let url = components?.url else {
             throw URLError(.badURL)
         }
         guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
