@@ -649,6 +649,34 @@ app.get(
   handleGetCardholderProfile
 );
 
+// Helper to generate, store, and send a 6-digit verification OTP email
+const issueAndSendEmailOtp = async (normalizedEmail: string) => {
+  await ensureOtpTable();
+
+  const otp = crypto.randomInt(100000, 1000000).toString();
+
+  await pool.query('DELETE FROM otp_verifications WHERE LOWER(email) = $1', [normalizedEmail]);
+
+  await pool.query(
+    `INSERT INTO otp_verifications (email, otp, expires_at, verified)
+     VALUES ($1, $2, NOW() + INTERVAL '10 minutes', FALSE)`,
+    [normalizedEmail, otp]
+  );
+
+  await mailTransporter.sendMail({
+    from: process.env.EMAIL_FROM || emailUser,
+    to: normalizedEmail,
+    subject: 'Your Kilala Verification Code',
+    text: `Your Kilala verification code is: ${otp}\n\nThis code will expire in 10 minutes.`,
+    html: `<div style="font-family: sans-serif; line-height: 1.5;">
+      <h2>Kilala Email Verification</h2>
+      <p>Your 6-digit verification code is:</p>
+      <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">${otp}</p>
+      <p>This code will expire in 10 minutes.</p>
+    </div>`,
+  });
+};
+
 // 3.1.1 Update Logged-in Cardholder Profile (Editable Fields Only)
 const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
@@ -699,10 +727,14 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
 
   const client = await pool.connect();
   try {
+    await ensureOtpTable();
     await client.query('BEGIN');
 
     const profileCheck = await client.query(
-      'SELECT id FROM cardholder_profiles WHERE user_id = $1',
+      `SELECT cp.id, u.email AS current_email
+       FROM cardholder_profiles cp
+       LEFT JOIN users u ON u.id = cp.user_id
+       WHERE cp.user_id = $1`,
       [userId]
     );
 
@@ -711,7 +743,12 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
       return res.status(404).json({ error: 'Cardholder profile not found' });
     }
 
-    if (emailValue !== undefined) {
+    const currentEmail = String(profileCheck.rows[0].current_email || '')
+      .trim()
+      .toLowerCase();
+    const isEmailChanged = emailValue !== undefined && emailValue !== currentEmail;
+
+    if (isEmailChanged && emailValue) {
       const existingUser = await client.query(
         'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
         [emailValue, userId]
@@ -721,11 +758,6 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'Email is already in use by another account' });
       }
-
-      await client.query(
-        'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-        [emailValue, userId]
-      );
     }
 
     await client.query(
@@ -760,7 +792,30 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
     );
 
     await client.query('COMMIT');
-    res.status(200).json(updatedResult.rows[0]);
+
+    if (isEmailChanged && emailValue) {
+      try {
+        await issueAndSendEmailOtp(emailValue);
+      } catch (mailError) {
+        console.error('Error sending email change OTP:', mailError);
+        return res.status(500).json({
+          error:
+            'Failed to send verification code to your new email address. Please check the email and try again.'
+        });
+      }
+
+      return res.status(200).json({
+        ...updatedResult.rows[0],
+        requires_email_verification: true,
+        pending_email: emailValue
+      });
+    }
+
+    res.status(200).json({
+      ...updatedResult.rows[0],
+      requires_email_verification: false,
+      pending_email: null
+    });
   } catch (error: any) {
     await client.query('ROLLBACK');
     if (error.code === '23505') {
@@ -792,6 +847,171 @@ app.patch(
   authenticateToken,
   requireRole(['CARDHOLDER']),
   handleUpdateCardholderProfile
+);
+
+// 3.1.2 Verify Email Change OTP and Update Cardholder Email
+app.post(
+  '/api/cardholder/verify-email-change',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  async (req: AuthRequest, res: Response) => {
+    const userId = req.user!.id;
+    const rawTargetEmail =
+      req.body.pending_email !== undefined
+        ? req.body.pending_email
+        : req.body.new_email !== undefined
+        ? req.body.new_email
+        : req.body.email;
+    const rawOtp = req.body.otp;
+
+    if (!rawTargetEmail || !rawOtp) {
+      return res.status(400).json({ error: 'New email address and OTP are required' });
+    }
+
+    const normalizedEmail = String(rawTargetEmail).trim().toLowerCase();
+    const trimmedOtp = String(rawOtp).trim();
+
+    if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await ensureOtpTable();
+      await client.query('BEGIN');
+
+      const otpRes = await client.query(
+        `SELECT id FROM otp_verifications
+         WHERE LOWER(email) = $1
+           AND otp = $2
+           AND verified = FALSE
+           AND expires_at > NOW()
+         ORDER BY expires_at DESC
+         LIMIT 1`,
+        [normalizedEmail, trimmedOtp]
+      );
+
+      if (otpRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid or Expired OTP' });
+      }
+
+      const existingUser = await client.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [normalizedEmail, userId]
+      );
+
+      if (existingUser.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+
+      await client.query(
+        'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [normalizedEmail, userId]
+      );
+
+      await client.query(
+        'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+        [normalizedEmail]
+      );
+
+      const updatedResult = await client.query(
+        `SELECT cp.*,
+                l.municipality_name AS lgu_name,
+                l.municipality_name AS issuing_lgu,
+                l.lgu_code,
+                cp.issued_date AS issue_date,
+                cp.emergency_contact_phone AS emergency_contact_number,
+                cp.photo_url AS profile_photo_url,
+                u.email
+         FROM cardholder_profiles cp
+         JOIN lgus l ON l.id = cp.lgu_id
+         LEFT JOIN users u ON u.id = cp.user_id
+         WHERE cp.user_id = $1`,
+        [userId]
+      );
+
+      if (updatedResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Cardholder profile not found' });
+      }
+
+      await client.query('COMMIT');
+
+      res.status(200).json({
+        ...updatedResult.rows[0],
+        requires_email_verification: false,
+        pending_email: null
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+      console.error('Verify email change OTP error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// 3.1.3 Resend Email Change OTP
+const handleResendEmailChangeOtp = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+  const rawTargetEmail =
+    req.body.pending_email !== undefined
+      ? req.body.pending_email
+      : req.body.new_email !== undefined
+      ? req.body.new_email
+      : req.body.email;
+
+  if (!rawTargetEmail || typeof rawTargetEmail !== 'string' || !rawTargetEmail.trim()) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  const normalizedEmail = rawTargetEmail.trim().toLowerCase();
+  if (!normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  try {
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+      [normalizedEmail, userId]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ error: 'Email is already in use by another account' });
+    }
+
+    await issueAndSendEmailOtp(normalizedEmail);
+
+    res.status(200).json({
+      message: 'OTP sent successfully',
+      pending_email: normalizedEmail
+    });
+  } catch (error) {
+    console.error('Resend email change OTP error:', error);
+    res.status(500).json({
+      error: 'Failed to send verification code. Please check your email address and try again.'
+    });
+  }
+};
+
+app.post(
+  '/api/cardholder/resend-email-change-otp',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleResendEmailChangeOtp
+);
+
+app.post(
+  '/api/cardholder/request-email-change-otp',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleResendEmailChangeOtp
 );
 
 // 3.2 Rotate / Refresh QR Secret Token
