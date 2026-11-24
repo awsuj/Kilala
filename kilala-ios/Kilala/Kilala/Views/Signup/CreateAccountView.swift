@@ -8,8 +8,15 @@
 import SwiftUI
 
 struct CreateAccountView: View {
+    // MARK: - Properties
+
     let profileId: UUID
+    var verifiedFullName: String? = nil
+    var verifiedCardNumber: String? = nil
+    var verifiedPrivilegeLabel: String? = nil
     var onRegistrationSuccess: ((LoginResponse) -> Void)? = nil
+
+    @Environment(\.dismiss) private var dismiss
 
     @State private var email: String = ""
     @State private var password: String = ""
@@ -24,6 +31,16 @@ struct CreateAccountView: View {
     @State private var errorMessage: String? = nil
     @State private var standaloneSession: LoginResponse? = nil
 
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case email
+        case password
+        case confirmPassword
+    }
+
+    // MARK: - Password Validation Computed Properties
+
     private var hasMinLength: Bool { password.count >= 8 }
     private var hasUppercase: Bool { password.range(of: "[A-Z]", options: .regularExpression) != nil }
     private var hasNumber: Bool { password.range(of: "[0-9]", options: .regularExpression) != nil }
@@ -33,160 +50,265 @@ struct CreateAccountView: View {
     private var isPasswordValid: Bool {
         hasMinLength && hasUppercase && hasNumber && hasSpecialChar
     }
+    private var passwordsMatch: Bool {
+        !confirmPassword.isEmpty && password == confirmPassword
+    }
+
+    // MARK: - Body
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-                // Header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Register Account")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.black)
-                        .padding(.bottom, 4)
+        ZStack {
+            Color.kilalaPaper
+                .ignoresSafeArea()
 
-                    Divider()
-                        .background(Color.gray)
-                        .padding(.bottom, 8)
-
-                    Text("Create your account credentials")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.gray)
-                }
-                .padding(.top, 16)
-
-                // Email Address
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Email Address")
-                            .font(.footnote)
-                            .fontWeight(.bold)
-                        Spacer()
-                        if isEmailVerified {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                Text("Verified")
-                            }
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.green)
-                        }
-                    }
-
-                    CustomTextField(text: $email)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onChange(of: email) { _, newValue in
-                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                            if isEmailVerified && trimmed != verifiedEmail.lowercased() {
-                                isEmailVerified = false
-                            }
-                        }
-                }
-
-                // Create Password
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Create Password")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-
-                    CustomSecureField(text: $password)
-
-                    // Password Rules
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Editorial Header
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Password must contain:")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.gray)
+                        Text("STEP 2 OF 2 · ACCOUNT DETAILS")
+                            .font(.kilala(.caption, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundColor(.kilalaGreen)
 
-                        PasswordRuleRow(text: "At least 8 characters", isMet: hasMinLength)
-                        PasswordRuleRow(text: "At least 1 uppercase letter", isMet: hasUppercase)
-                        PasswordRuleRow(text: "At least 1 number", isMet: hasNumber)
-                        PasswordRuleRow(text: "At least 1 special character", isMet: hasSpecialChar)
+                        Text("Create Your Account")
+                            .font(.kilala(size: 28, weight: .bold, relativeTo: .title))
+                            .foregroundColor(.kilalaInk)
+
+                        Text("Set up your login credentials and verify your email address to claim your Kilala Digital ID.")
+                            .font(.kilala(.callout))
+                            .foregroundColor(.kilalaInkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.top, 4)
-                }
+                    .padding(.top, 8)
 
-                // Confirm Password
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Confirm Password")
-                        .font(.footnote)
-                        .fontWeight(.bold)
+                    // Compact Verified LGU Record Banner
+                    if let verifiedFullName, !verifiedFullName.isEmpty {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.kilalaStateValid)
+                                .padding(.top, 1)
+                                .accessibilityHidden(true)
 
-                    CustomSecureField(text: $confirmPassword)
-                }
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("LGU record verified")
+                                    .font(.kilala(.footnote, weight: .bold))
+                                    .foregroundColor(.kilalaStateValid)
 
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundColor(.red)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
+                                Text(verifiedFullName)
+                                    .font(.kilala(.callout, weight: .bold))
+                                    .foregroundColor(.kilalaInk)
 
-                // Primary Button: Send OTP to email
-                Button(action: handleSendOTP) {
-                    if isSendingOTP {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color(white: 0.25))
-                            .cornerRadius(8)
-                    } else {
-                        Text("Send OTP to email")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color(white: 0.25))
-                            .cornerRadius(8)
+                                if let verifiedPrivilegeLabel, !verifiedPrivilegeLabel.isEmpty {
+                                    Text(verifiedPrivilegeLabel)
+                                        .font(.kilala(.footnote))
+                                        .foregroundColor(.kilalaInkSecondary)
+                                }
+
+                                if let verifiedCardNumber, !verifiedCardNumber.isEmpty {
+                                    Text("ID: \(verifiedCardNumber)")
+                                        .font(.kilalaMono(.caption, weight: .medium))
+                                        .foregroundColor(.kilalaInkSecondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            Button("Change") {
+                                dismiss()
+                            }
+                            .font(.kilala(.footnote, weight: .bold))
+                            .foregroundColor(.kilalaGreen)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.kilalaMint)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                        )
                     }
-                }
-                .disabled(isSendingOTP || isCreatingAccount)
-                .padding(.top, 10)
 
-                // Secondary Button: Create Account + Helper Note
-                VStack(alignment: .center, spacing: 8) {
-                    Text("Your email must be verified first in order to create your account.")
-                        .font(.footnote)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    // Account Credentials Card
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionHeader("Account Credentials")
 
-                    Button(action: handleCreateAccount) {
-                        if isCreatingAccount {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(Color.blue)
-                                .cornerRadius(8)
-                        } else {
-                            Text("Create Account")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(isEmailVerified ? .white : .gray)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(isEmailVerified ? Color.blue : Color(white: 0.88))
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isEmailVerified ? Color.clear : Color.gray.opacity(0.5), lineWidth: 1)
+                        VStack(alignment: .leading, spacing: 16) {
+                            // Email Address
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    fieldLabel("Email Address *")
+
+                                    Spacer()
+
+                                    if isEmailVerified {
+                                        KilalaStatusBadge(
+                                            icon: "checkmark.circle.fill",
+                                            label: "Verified",
+                                            foreground: .kilalaStateValid,
+                                            background: Color.kilalaStateValid.opacity(0.12),
+                                            cornerRadius: 8
+                                        )
+                                    }
+                                }
+
+                                TextField(
+                                    "Email Address *",
+                                    text: $email,
+                                    prompt: Text(verbatim: "name@example.com").foregroundStyle(Color.kilalaInk.opacity(0.4))
                                 )
+                                .font(.kilala(.body))
+                                .foregroundColor(.kilalaInk)
+                                .tint(.kilalaGreen)
+                                .keyboardType(.emailAddress)
+                                .textContentType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.next)
+                                .focused($focusedField, equals: .email)
+                                .onSubmit { focusedField = .password }
+                                .onChange(of: email) { _, newValue in
+                                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                                    if isEmailVerified && trimmed != verifiedEmail.lowercased() {
+                                        isEmailVerified = false
+                                    }
+                                }
+                                .kilalaCardholderInputChrome(isFocused: focusedField == .email)
+                            }
+
+                            // Create Password
+                            VStack(alignment: .leading, spacing: 8) {
+                                fieldLabel("Create Password *")
+
+                                SecureField("Create a password", text: $password)
+                                    .font(.kilala(.body))
+                                    .foregroundColor(.kilalaInk)
+                                    .tint(.kilalaGreen)
+                                    .textContentType(.newPassword)
+                                    .submitLabel(.next)
+                                    .focused($focusedField, equals: .password)
+                                    .onSubmit { focusedField = .confirmPassword }
+                                    .kilalaCardholderInputChrome(isFocused: focusedField == .password)
+
+                                // Password Rules
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Password must contain:")
+                                        .font(.kilala(.caption, weight: .bold))
+                                        .foregroundColor(.kilalaInkSecondary)
+
+                                    PasswordRuleRow(text: "At least 8 characters", isMet: hasMinLength)
+                                    PasswordRuleRow(text: "At least 1 uppercase letter", isMet: hasUppercase)
+                                    PasswordRuleRow(text: "At least 1 number", isMet: hasNumber)
+                                    PasswordRuleRow(text: "At least 1 special character", isMet: hasSpecialChar)
+                                }
+                                .padding(.top, 2)
+                            }
+
+                            // Confirm Password
+                            VStack(alignment: .leading, spacing: 8) {
+                                fieldLabel("Confirm Password *")
+
+                                SecureField("Re-enter your password", text: $confirmPassword)
+                                    .font(.kilala(.body))
+                                    .foregroundColor(.kilalaInk)
+                                    .tint(.kilalaGreen)
+                                    .textContentType(.newPassword)
+                                    .submitLabel(.done)
+                                    .focused($focusedField, equals: .confirmPassword)
+                                    .onSubmit { focusedField = nil }
+                                    .kilalaCardholderInputChrome(isFocused: focusedField == .confirmPassword)
+
+                                if !confirmPassword.isEmpty && !passwordsMatch {
+                                    Text("Passwords do not match.")
+                                        .font(.kilala(.caption, weight: .semibold))
+                                        .foregroundColor(.kilalaStateInvalid)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                        )
+                    }
+
+                    if let errorMessage = errorMessage {
+                        inlineErrorBanner(errorMessage)
+                    }
+
+                    // Action Buttons
+                    VStack(spacing: 14) {
+                        // Send OTP to Email Button
+                        Button(action: handleSendOTP) {
+                            HStack(spacing: 8) {
+                                if isSendingOTP {
+                                    ProgressView()
+                                        .tint(isEmailVerified ? .kilalaGreen : .white)
+                                    Text("Sending Verification Code...")
+                                        .font(.kilala(.headline, weight: .bold))
+                                        .foregroundColor(isEmailVerified ? .kilalaGreen : .white)
+                                } else {
+                                    Text(isEmailVerified ? "Resend OTP to Email" : "Send OTP to email")
+                                        .font(.kilala(.headline, weight: .bold))
+                                        .foregroundColor(isEmailVerified ? .kilalaGreen : .white)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(isEmailVerified ? Color.white : Color.kilalaGreen)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(isEmailVerified ? Color.kilalaMintBorder : Color.clear, lineWidth: 1)
+                            )
+                        }
+                        .disabled(isSendingOTP || isCreatingAccount)
+                        .opacity((isSendingOTP || isCreatingAccount) ? 0.55 : 1.0)
+
+                        // Create Account Button + Helper Note
+                        VStack(alignment: .center, spacing: 8) {
+                            Text("Your email must be verified first in order to create your account.")
+                                .font(.kilala(.footnote))
+                                .foregroundColor(.kilalaInkSecondary)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity, alignment: .center)
+
+                            Button(action: handleCreateAccount) {
+                                HStack(spacing: 8) {
+                                    if isCreatingAccount {
+                                        ProgressView()
+                                            .tint(.white)
+                                        Text("Creating Account...")
+                                            .font(.kilala(.headline, weight: .bold))
+                                            .foregroundColor(.white)
+                                    } else {
+                                        Text("Create Account")
+                                            .font(.kilala(.headline, weight: .bold))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(Color.kilalaGreen)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            .disabled(!isEmailVerified || isCreatingAccount || isSendingOTP)
+                            .opacity((!isEmailVerified || isCreatingAccount || isSendingOTP) ? 0.55 : 1.0)
                         }
                     }
-                    .disabled(!isEmailVerified || isCreatingAccount || isSendingOTP)
                 }
-                .padding(.bottom, 40)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 20)
+            .scrollDismissesKeyboard(.interactively)
         }
+        .navigationTitle("Create Account")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.kilalaPaper, for: .navigationBar)
         .navigationDestination(isPresented: $navigateToOTP) {
             OTPVerificationView(
                 email: verifiedEmail,
@@ -206,7 +328,48 @@ struct CreateAccountView: View {
         }
     }
 
+    // MARK: - Form Helpers
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.kilala(.caption, weight: .bold))
+            .tracking(0.8)
+            .foregroundColor(.kilalaInkSecondary)
+    }
+
+    private func fieldLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.kilala(.subheadline, weight: .bold))
+            .foregroundColor(.kilalaInk)
+    }
+
+    private func inlineErrorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.kilalaStateInvalid)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.kilala(.subheadline, weight: .semibold))
+                .foregroundColor(.kilalaStateInvalid)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.kilalaStateInvalid.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.kilalaStateInvalid.opacity(0.30), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Actions & Networking
+
     private func handleSendOTP() {
+        focusedField = nil
         errorMessage = nil
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -235,6 +398,7 @@ struct CreateAccountView: View {
     }
 
     private func handleCreateAccount() {
+        focusedField = nil
         guard isEmailVerified else { return }
         errorMessage = nil
 
@@ -281,6 +445,8 @@ struct CreateAccountView: View {
     }
 }
 
+// MARK: - Password Rule Row & Secure Field Helpers
+
 struct PasswordRuleRow: View {
     let text: String
     let isMet: Bool
@@ -288,11 +454,13 @@ struct PasswordRuleRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
-                .font(.caption2)
-                .foregroundColor(isMet ? .green : .gray)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(isMet ? .kilalaStateValid : .kilalaInkMuted)
+                .accessibilityHidden(true)
+
             Text(text)
-                .font(.caption)
-                .foregroundColor(isMet ? .green : .gray)
+                .font(.kilala(.caption, weight: isMet ? .semibold : .regular))
+                .foregroundColor(isMet ? .kilalaStateValid : .kilalaInkSecondary)
         }
     }
 }
@@ -302,14 +470,10 @@ struct CustomSecureField: View {
 
     var body: some View {
         SecureField("", text: $text)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 8)
-            .background(Color(white: 0.92))
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.gray.opacity(0.6), lineWidth: 1)
-            )
+            .font(.kilala(.body))
+            .foregroundColor(.kilalaInk)
+            .tint(.kilalaGreen)
+            .kilalaCardholderInputChrome(isFocused: false)
     }
 }
 
