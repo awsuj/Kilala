@@ -14,10 +14,32 @@ struct CardholderDashboardView: View {
     let token: String
     var onLogout: (() -> Void)? = nil
 
-    enum Tab: Hashable {
+    enum Tab: Hashable, CaseIterable {
         case home
         case transactions
         case profile
+
+        var title: String {
+            switch self {
+            case .home:
+                return "Home"
+            case .transactions:
+                return "Transactions"
+            case .profile:
+                return "Profile"
+            }
+        }
+
+        func iconName(isSelected: Bool) -> String {
+            switch self {
+            case .home:
+                return isSelected ? "house.fill" : "house"
+            case .transactions:
+                return isSelected ? "list.bullet.rectangle.fill" : "list.bullet.rectangle"
+            case .profile:
+                return isSelected ? "person.fill" : "person"
+            }
+        }
     }
 
     @State private var selectedTab: Tab = .home
@@ -27,37 +49,43 @@ struct CardholderDashboardView: View {
     @State private var isQRRevealed: Bool = false
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            CardholderHomeView(
-                profile: profile,
-                isLoading: isLoading,
-                errorMessage: errorMessage,
-                isQRRevealed: $isQRRevealed,
-                onRetry: {
-                    Task {
-                        await loadProfile(force: true)
+        VStack(spacing: 0) {
+            Group {
+                switch selectedTab {
+                case .home:
+                    CardholderHomeView(
+                        profile: profile,
+                        isLoading: isLoading,
+                        errorMessage: errorMessage,
+                        isQRRevealed: $isQRRevealed,
+                        onRetry: {
+                            Task {
+                                await loadProfile(force: true)
+                            }
+                        },
+                        onLogout: onLogout
+                    )
+
+                case .transactions:
+                    NavigationStack {
+                        CardholderTransactionHistoryView(token: token)
                     }
-                },
-                onLogout: onLogout
-            )
-            .tabItem {
-                Label("Home", systemImage: selectedTab == .home ? "house.fill" : "house")
+
+                case .profile:
+                    Color.clear
+                }
             }
-            .tag(Tab.home)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Color.clear
-                .tabItem {
-                    Label("Transactions", systemImage: "list.bullet.rectangle")
-                }
-                .tag(Tab.transactions)
-
-            Color.clear
-                .tabItem {
-                    Label("Profile", systemImage: selectedTab == .profile ? "person.fill" : "person")
-                }
-                .tag(Tab.profile)
+            // Flat, Compact Bottom Tab Bar anchored to bottom safe area
+            CardholderFlatTabBar(selectedTab: $selectedTab)
         }
-        .tint(.black)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onAppear {
+            if !token.isEmpty {
+                APIService.shared.authToken = token
+            }
+        }
         .task {
             await loadProfile(force: false)
         }
@@ -87,6 +115,54 @@ struct CardholderDashboardView: View {
             errorMessage = "Could not load Digital ID."
             isLoading = false
         }
+    }
+}
+
+// MARK: - Flat, Compact Bottom Tab Bar
+
+private struct CardholderFlatTabBar: View {
+    @Binding var selectedTab: CardholderDashboardView.Tab
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaBorder)
+                .frame(height: 1)
+
+            HStack(spacing: 0) {
+                ForEach(CardholderDashboardView.Tab.allCases, id: \.self) { tab in
+                    let isSelected = selectedTab == tab
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            selectedTab = tab
+                        }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: tab.iconName(isSelected: isSelected))
+                                .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+
+                            Text(tab.title)
+                                .font(.kilala(size: 11, weight: isSelected ? .bold : .medium, relativeTo: .caption2))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(isSelected ? .kilalaGreen : .kilalaInkSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
+        }
+        .background(
+            Color.white
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 }
 

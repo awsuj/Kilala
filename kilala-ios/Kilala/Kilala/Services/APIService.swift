@@ -13,6 +13,33 @@ struct LoginResponse: Codable {
     let user: User
 }
 
+struct CardholderTransactionHistoryItem: Codable, Identifiable {
+    let id: UUID
+    let businessId: UUID?
+    let cardholderId: UUID?
+    let businessName: String
+    let branchName: String?
+    let category: String?
+    let businessCategory: String?
+    let originalAmount: Double
+    let discountedAmount: Double
+    let createdAt: String
+
+    var discountAmount: Double {
+        max(0, originalAmount - discountedAmount)
+    }
+
+    var formattedCategory: String {
+        let raw = (category ?? businessCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else {
+            return "Other"
+        }
+        return raw
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+    }
+}
+
 enum APIError: LocalizedError {
     case conflict(String)
     case badRequest(String)
@@ -459,6 +486,60 @@ class APIService {
         }
         let summary = try decoder.decode(BusinessDashboardSummary.self, from: data)
         return summary.transactions ?? []
+    }
+
+    func fetchCardholderTransactions(
+        token: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil
+    ) async throws -> [CardholderTransactionHistoryItem] {
+        if let token, !token.isEmpty {
+            self.authToken = token
+        }
+        var components = URLComponents(string: "\(baseURL)/transactions/cardholder")
+        var queryItems: [URLQueryItem] = []
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        if let startDate {
+            let startOfDay = Calendar.current.startOfDay(for: startDate)
+            queryItems.append(URLQueryItem(name: "startDate", value: isoFormatter.string(from: startOfDay)))
+        }
+        if let endDate {
+            let startOfEndDay = Calendar.current.startOfDay(for: endDate)
+            let endOfDay = Calendar.current.date(byAdding: DateComponents(day: 1, second: -1), to: startOfEndDay) ?? endDate
+            queryItems.append(URLQueryItem(name: "endDate", value: isoFormatter.string(from: endOfDay)))
+        }
+
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+
+        guard let url = components?.url else {
+            throw URLError(.badURL)
+        }
+        guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to fetch cardholder transactions."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode([CardholderTransactionHistoryItem].self, from: data)
     }
 
     func fetchBusinessDashboardSummary(range: String = "24h") async throws -> BusinessDashboardSummary {

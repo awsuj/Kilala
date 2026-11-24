@@ -1040,6 +1040,68 @@ app.get(
   (req: AuthRequest, res: Response) => handleBusinessTransactions(req, res, true)
 );
 
+// 4.6 Get Cardholder Transaction History
+const handleCardholderTransactions = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+
+  try {
+    const result = await pool.query(
+      `SELECT t.id,
+              t.business_id,
+              t.cardholder_id,
+              t.original_amount,
+              t.discounted_amount,
+              t.created_at,
+              bp.business_name,
+              bp.branch_name,
+              bp.category
+       FROM transactions t
+       JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+       JOIN business_profiles bp ON bp.user_id = t.business_id
+       WHERE cp.user_id = $1
+       ORDER BY t.created_at DESC`,
+      [userId]
+    );
+
+    const transactions = result.rows.map((row) => {
+      const originalAmount = Number(row.original_amount);
+      const discountedAmount = Number(row.discounted_amount);
+      return {
+        id: row.id,
+        business_id: row.business_id,
+        cardholder_id: row.cardholder_id,
+        business_name: row.business_name,
+        branch_name: row.branch_name,
+        category: row.category,
+        business_category: row.category,
+        original_amount: originalAmount,
+        discount_amount: Math.max(0, Number((originalAmount - discountedAmount).toFixed(2))),
+        discounted_amount: discountedAmount,
+        created_at: row.created_at
+      };
+    });
+
+    return res.status(200).json(transactions);
+  } catch (error) {
+    console.error('Error fetching cardholder transactions:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+app.get(
+  '/api/transactions/cardholder',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleCardholderTransactions
+);
+
+app.get(
+  '/api/cardholder/transactions',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleCardholderTransactions
+);
+
 
 // ============================================================================
 // 5. LGU ADMIN PORTAL ROUTES (Web Application)
