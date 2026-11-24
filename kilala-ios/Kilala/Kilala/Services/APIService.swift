@@ -46,6 +46,7 @@ class APIService {
     private let baseURL = "https://kilala-vyn1.onrender.com/api"
     #endif
     var authToken: String?
+    var currentUserEmail: String?
     var currentBusinessProfile: BusinessProfile?
     
     private init() {} // Prevent multiple instances
@@ -76,6 +77,7 @@ class APIService {
         // Decode the successful JSON response
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         self.authToken = loginResponse.token
+        self.currentUserEmail = loginResponse.user.email
         if loginResponse.user.role == .business {
             self.currentBusinessProfile = try? await self.fetchBusinessProfile()
         } else {
@@ -200,6 +202,7 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let registrationResponse = try decoder.decode(BusinessRegistrationResponse.self, from: data)
         self.authToken = registrationResponse.token
+        self.currentUserEmail = registrationResponse.user.email
         self.currentBusinessProfile = registrationResponse.businessProfile
         return registrationResponse
     }
@@ -361,6 +364,7 @@ class APIService {
         
         let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
         self.authToken = loginResponse.token
+        self.currentUserEmail = loginResponse.user.email
         return loginResponse
     }
 
@@ -403,8 +407,31 @@ class APIService {
         return try decoder.decode(TransactionRecordResponse.self, from: data)
     }
 
-    func fetchBusinessTransactions() async throws -> [TransactionHistoryItem] {
-        guard let url = URL(string: "\(baseURL)/transactions/business") else {
+    func fetchBusinessTransactions(
+        startDate: Date? = nil,
+        endDate: Date? = nil
+    ) async throws -> [TransactionHistoryItem] {
+        var components = URLComponents(string: "\(baseURL)/transactions/business")
+        var queryItems: [URLQueryItem] = []
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        if let startDate {
+            let startOfDay = Calendar.current.startOfDay(for: startDate)
+            queryItems.append(URLQueryItem(name: "startDate", value: isoFormatter.string(from: startOfDay)))
+        }
+        if let endDate {
+            let startOfEndDay = Calendar.current.startOfDay(for: endDate)
+            let endOfDay = Calendar.current.date(byAdding: DateComponents(day: 1, second: -1), to: startOfEndDay) ?? endDate
+            queryItems.append(URLQueryItem(name: "endDate", value: isoFormatter.string(from: endOfDay)))
+        }
+
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+
+        guard let url = components?.url else {
             throw URLError(.badURL)
         }
         guard let token = authToken else {

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import AVFoundation
 
 struct QRScannerView: View {
@@ -18,6 +19,7 @@ struct QRScannerView: View {
     @State private var scanResult: VerificationResponse? = nil
     @State private var isVerifying = false
     @State private var errorMessage: String? = nil
+    @State private var rawDetectionStatus: String? = nil
     
     #if targetEnvironment(simulator)
     @State private var manualQRToken = ""
@@ -25,6 +27,10 @@ struct QRScannerView: View {
     
     private var isScannerActive: Bool {
         isScannerVisible && !isVerifying && scanResult == nil
+    }
+    
+    private var statusBannerText: String {
+        rawDetectionStatus ?? "Align the cardholder's QR code within the frame"
     }
     
     var body: some View {
@@ -69,65 +75,83 @@ struct QRScannerView: View {
     private var scannerContent: some View {
         ZStack {
             // Camera Feed Background
-            QRCameraScannerRepresentable(isScanning: isScannerActive) { scannedToken in
-                verifyQRToken(scannedToken)
-            }
+            QRCameraScannerRepresentable(
+                isScanning: isScannerActive,
+                onRawCodeDetected: {
+                    errorMessage = nil
+                    rawDetectionStatus = "Verifying QR..."
+                },
+                onCodeScanned: { scannedToken in
+                    verifyQRToken(scannedToken)
+                }
+            )
             .ignoresSafeArea()
             
             // Darkened Scanner Overlay & Reticle
-            VStack(spacing: 20) {
-                VStack(spacing: 6) {
+            VStack(spacing: 16) {
+                VStack(spacing: 4) {
                     Text("Scan Kilala Digital ID")
-                        .font(.title3.bold())
+                        .font(.kilala(.title3, weight: .bold))
                         .foregroundColor(.white)
                     
-                    Text("Align the cardholder's QR code within the frame")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.85))
+                    Text(statusBannerText)
+                        .font(.kilala(.subheadline, weight: rawDetectionStatus != nil ? .semibold : .regular))
+                        .foregroundColor(rawDetectionStatus != nil ? .kilalaSunrise : .white.opacity(0.9))
                         .multilineTextAlignment(.center)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(.ultraThinMaterial)
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.top, 12)
                 
                 Spacer()
                 
-                // Scanner Reticle Frame
+                // Scanner Reticle Frame (16pt restrained radius)
                 ZStack {
-                    RoundedRectangle(cornerRadius: 24)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(
-                            isVerifying ? Color.yellow : Color.white,
-                            style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [30, 15])
+                            isVerifying ? Color.kilalaSunrise : Color.white,
+                            style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [28, 14])
                         )
                         .frame(width: 240, height: 240)
-                        .background(Color.black.opacity(0.15).cornerRadius(24))
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.kilalaInk.opacity(0.20))
+                        )
                     
                     if isVerifying {
                         VStack(spacing: 12) {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(1.3)
+                                .progressViewStyle(CircularProgressViewStyle(tint: .kilalaSunrise))
+                                .scaleEffect(1.2)
                             Text("Verifying ID...")
-                                .font(.callout.weight(.semibold))
+                                .font(.kilala(.callout, weight: .semibold))
                                 .foregroundColor(.white)
                         }
-                        .padding(20)
+                        .padding(16)
                         .background(.ultraThinMaterial)
-                        .cornerRadius(16)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
                 
                 if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote.weight(.medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.red.opacity(0.9))
-                        .cornerRadius(10)
-                        .padding(.horizontal)
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .accessibilityHidden(true)
+
+                        Text(errorMessage)
+                            .font(.kilala(.footnote, weight: .semibold))
+                            .foregroundColor(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.kilalaStateInvalid.opacity(0.95))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.horizontal, 16)
                 }
                 
                 Spacer()
@@ -137,31 +161,39 @@ struct QRScannerView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "clock.arrow.circlepath")
                             Text("View Transaction History")
-                                .fontWeight(.semibold)
+                                .font(.kilala(.subheadline, weight: .semibold))
                         }
-                        .font(.subheadline)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 48)
                         .background(.ultraThinMaterial)
-                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .padding(.bottom, 8)
                 }
                 
                 #if targetEnvironment(simulator)
                 // Simulator Fallback for testing without a physical camera
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     Label("Simulator Debug Input", systemImage: "hammer.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(.secondary)
+                        .font(.kilala(.caption, weight: .bold))
+                        .foregroundColor(.kilalaInkSecondary)
                     
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         TextField("Paste QR token (e.g. KILALA-QR-...)", text: $manualQRToken)
-                            .textFieldStyle(.roundedBorder)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .font(.system(.subheadline, design: .monospaced))
+                            .font(.kilalaMono(.callout, weight: .medium))
+                            .foregroundColor(.kilalaInk)
+                            .tint(.kilalaGreen)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 48)
+                            .background(Color.kilalaPaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.kilalaBorder, lineWidth: 1)
+                            )
                         
                         Button {
                             let trimmed = manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,20 +201,24 @@ struct QRScannerView: View {
                             verifyQRToken(trimmed)
                         } label: {
                             Text("Verify")
-                                .fontWeight(.semibold)
+                                .font(.kilala(.callout, weight: .bold))
                                 .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.blue)
+                                .frame(minHeight: 48)
+                                .background(Color.kilalaGreen)
                                 .foregroundColor(.white)
-                                .cornerRadius(8)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .disabled(isVerifying || manualQRToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                .padding()
-                .background(.regularMaterial)
-                .cornerRadius(16)
-                .padding(.horizontal)
+                .padding(16)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                )
+                .padding(.horizontal, 16)
                 .padding(.bottom, 16)
                 #endif
             }
@@ -191,9 +227,13 @@ struct QRScannerView: View {
     
     private func verifyQRToken(_ qrToken: String) {
         let trimmedToken = qrToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedToken.isEmpty && !isVerifying && scanResult == nil else { return }
+        guard !trimmedToken.isEmpty && !isVerifying && scanResult == nil else {
+            rawDetectionStatus = nil
+            return
+        }
         
         isVerifying = true
+        rawDetectionStatus = "Verifying QR..."
         errorMessage = nil
         
         Task {
@@ -202,11 +242,13 @@ struct QRScannerView: View {
                 let feedback = UINotificationFeedbackGenerator()
                 feedback.notificationOccurred(response.isValid ? .success : .error)
                 isVerifying = false
+                rawDetectionStatus = nil
                 scanResult = response
             } catch {
                 let feedback = UINotificationFeedbackGenerator()
                 feedback.notificationOccurred(.error)
                 isVerifying = false
+                rawDetectionStatus = nil
                 errorMessage = "Unable to verify QR code. Check your connection or business accreditation."
             }
         }
@@ -215,89 +257,154 @@ struct QRScannerView: View {
 
 // MARK: - AVFoundation Camera Preview
 
-struct QRCameraScannerRepresentable: UIViewControllerRepresentable {
+struct QRCameraScannerRepresentable: UIViewRepresentable {
     let isScanning: Bool
+    let onRawCodeDetected: () -> Void
     let onCodeScanned: (String) -> Void
     
-    func makeUIViewController(context: Context) -> ScannerViewController {
-        let controller = ScannerViewController()
-        controller.onCodeScanned = onCodeScanned
-        controller.isScanningEnabled = isScanning
-        return controller
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            isScanningEnabled: isScanning,
+            onRawCodeDetected: onRawCodeDetected,
+            onCodeScanned: onCodeScanned
+        )
     }
     
-    func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {
-        uiViewController.onCodeScanned = onCodeScanned
-        uiViewController.isScanningEnabled = isScanning
-    }
-}
-
-final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
-    var onCodeScanned: ((String) -> Void)?
-    var isScanningEnabled: Bool = true
-    
-    private let captureSession = AVCaptureSession()
-    private var previewLayer: AVCaptureVideoPreviewLayer?
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .black
-        setupCaptureSession()
+    func makeUIView(context: Context) -> CameraPreviewView {
+        let previewView = CameraPreviewView()
+        previewView.backgroundColor = .black
+        previewView.previewLayer.session = context.coordinator.captureSession
+        previewView.previewLayer.videoGravity = .resizeAspectFill
+        context.coordinator.configureAndStartIfNeeded()
+        return previewView
     }
     
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        previewLayer?.frame = view.layer.bounds
+    func updateUIView(_ uiView: CameraPreviewView, context: Context) {
+        // Only update scan gating and callbacks — never reconfigure or restart the running AVCaptureSession.
+        context.coordinator.onRawCodeDetected = onRawCodeDetected
+        context.coordinator.onCodeScanned = onCodeScanned
+        context.coordinator.isScanningEnabled = isScanning
     }
     
-    private func setupCaptureSession() {
-        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else {
-            return
+    static func dismantleUIView(_ uiView: CameraPreviewView, coordinator: Coordinator) {
+        coordinator.stopSession()
+    }
+    
+    final class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+        let captureSession = AVCaptureSession()
+        private let sessionQueue = DispatchQueue(label: "com.kilala.qrscanner.session")
+        private var isSessionConfigured = false
+        
+        var isScanningEnabled: Bool
+        var onRawCodeDetected: () -> Void
+        var onCodeScanned: (String) -> Void
+        
+        init(
+            isScanningEnabled: Bool,
+            onRawCodeDetected: @escaping () -> Void,
+            onCodeScanned: @escaping (String) -> Void
+        ) {
+            self.isScanningEnabled = isScanningEnabled
+            self.onRawCodeDetected = onRawCodeDetected
+            self.onCodeScanned = onCodeScanned
+            super.init()
         }
         
-        guard let videoInput = try? AVCaptureDeviceInput(device: videoCaptureDevice),
-              captureSession.canAddInput(videoInput) else {
-            return
+        func configureAndStartIfNeeded() {
+            guard !isSessionConfigured else {
+                startRunningIfNeeded()
+                return
+            }
+            
+            guard let videoCaptureDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+                    ?? AVCaptureDevice.default(for: .video) else {
+                return
+            }
+            
+            guard let videoInput = try? AVCaptureDeviceInput(device: videoCaptureDevice) else {
+                return
+            }
+            
+            if videoCaptureDevice.isFocusModeSupported(.continuousAutoFocus) {
+                try? videoCaptureDevice.lockForConfiguration()
+                videoCaptureDevice.focusMode = .continuousAutoFocus
+                videoCaptureDevice.unlockForConfiguration()
+            }
+            
+            captureSession.beginConfiguration()
+            
+            guard captureSession.canAddInput(videoInput) else {
+                captureSession.commitConfiguration()
+                return
+            }
+            captureSession.addInput(videoInput)
+            
+            let metadataOutput = AVCaptureMetadataOutput()
+            guard captureSession.canAddOutput(metadataOutput) else {
+                captureSession.commitConfiguration()
+                return
+            }
+            // Add output BEFORE setting metadataObjectTypes, and attach retained Coordinator on .main queue.
+            captureSession.addOutput(metadataOutput)
+            metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
+            if metadataOutput.availableMetadataObjectTypes.contains(.qr) {
+                metadataOutput.metadataObjectTypes = [.qr]
+            }
+            // Do not set metadataOutput.rectOfInterest so the entire camera frame is scanned.
+            
+            captureSession.commitConfiguration()
+            isSessionConfigured = true
+            
+            startRunningIfNeeded()
         }
-        captureSession.addInput(videoInput)
         
-        let metadataOutput = AVCaptureMetadataOutput()
-        guard captureSession.canAddOutput(metadataOutput) else {
-            return
+        private func startRunningIfNeeded() {
+            let session = captureSession
+            sessionQueue.async {
+                if !session.isRunning {
+                    session.startRunning()
+                }
+            }
         }
-        captureSession.addOutput(metadataOutput)
         
-        metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-        metadataOutput.metadataObjectTypes = [.qr]
+        func stopSession() {
+            let session = captureSession
+            sessionQueue.async {
+                if session.isRunning {
+                    session.stopRunning()
+                }
+            }
+        }
         
-        let preview = AVCaptureVideoPreviewLayer(session: captureSession)
-        preview.frame = view.layer.bounds
-        preview.videoGravity = .resizeAspectFill
-        view.layer.addSublayer(preview)
-        self.previewLayer = preview
-        
-        let session = captureSession
-        DispatchQueue.global(qos: .userInitiated).async {
-            if !session.isRunning {
-                session.startRunning()
+        nonisolated func metadataOutput(
+            _ output: AVCaptureMetadataOutput,
+            didOutput metadataObjects: [AVMetadataObject],
+            from connection: AVCaptureConnection
+        ) {
+            guard let readableObject = metadataObjects
+                .compactMap({ $0 as? AVMetadataMachineReadableCodeObject })
+                .first(where: { $0.stringValue?.isEmpty == false }),
+                  let stringValue = readableObject.stringValue else {
+                return
+            }
+            
+            MainActor.assumeIsolated {
+                guard self.isScanningEnabled else { return }
+                self.isScanningEnabled = false
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                self.onRawCodeDetected()
+                self.onCodeScanned(stringValue)
             }
         }
     }
+}
+
+final class CameraPreviewView: UIView {
+    override class var layerClass: AnyClass {
+        AVCaptureVideoPreviewLayer.self
+    }
     
-    nonisolated func metadataOutput(
-        _ output: AVCaptureMetadataOutput,
-        didOutput metadataObjects: [AVMetadataObject],
-        from connection: AVCaptureConnection
-    ) {
-        guard let readableObject = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
-              let stringValue = readableObject.stringValue else {
-            return
-        }
-        
-        Task { @MainActor [weak self] in
-            guard let self = self, self.isScanningEnabled else { return }
-            self.isScanningEnabled = false
-            self.onCodeScanned?(stringValue)
-        }
+    var previewLayer: AVCaptureVideoPreviewLayer {
+        layer as! AVCaptureVideoPreviewLayer
     }
 }
