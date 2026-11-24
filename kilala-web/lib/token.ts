@@ -7,7 +7,15 @@ export interface TokenPayload {
 }
 
 export const AUTH_COOKIE = process.env.AUTH_COOKIE || "kilala_token";
-export const ALLOWED_ROLE = "LGU_ADMIN";
+export const ALLOWED_ROLES = ["LGU_ADMIN", "SUPERADMIN"] as const;
+
+export function isAllowedRole(role?: string): boolean {
+  return !!role && (ALLOWED_ROLES as readonly string[]).includes(role);
+}
+
+export function landingPathForRole(role?: string): string {
+  return role === "SUPERADMIN" ? "/dashboard/accounts" : "/dashboard";
+}
 
 /**
  * Decodes (does NOT verify) a JWT payload. The web portal doesn't hold the

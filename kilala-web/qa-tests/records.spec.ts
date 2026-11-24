@@ -210,6 +210,28 @@ test.describe("LGU records page", () => {
     await expect(page).not.toHaveURL(/page=2/);
   });
 
+  test("Issuing LGU field is a dropdown listing Metro Manila cities", async ({
+    page,
+    request,
+  }) => {
+    await loginAsAdmin(request, page);
+    await page.goto("/dashboard/records");
+    await page.getByRole("button", { name: "+ Add Record" }).click();
+    const dialog = page.getByRole("dialog");
+
+    // The field must be a combobox (shadcn Select), not a plain text input
+    const lguTrigger = dialog.getByRole("combobox", { name: /Issuing LGU/i });
+    await expect(lguTrigger).toBeVisible();
+
+    // Open the dropdown and confirm a Metro Manila city is listed
+    await lguTrigger.click();
+    await expect(page.getByRole("option", { name: "Quezon City" })).toBeVisible();
+
+    // Close without submitting
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).not.toBeVisible();
+  });
+
   test("validates duplicate card numbers against live records without creating a row", async ({
     page,
     request,

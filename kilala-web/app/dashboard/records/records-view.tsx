@@ -22,6 +22,7 @@ import type {
   NewRecordInput,
   Status,
 } from "./types";
+import type { Lgu } from "@/lib/lgus";
 import AddRecordDialog from "./AddRecordDialog";
 import RenewDialog from "./RenewDialog";
 import SuspendDialog from "./SuspendDialog";
@@ -207,18 +208,20 @@ type ToastState = {
 
 export default function RecordsView({
   initialRows,
+  lgus,
 }: {
   initialRows: CardRecord[];
+  lgus: Lgu[];
 }) {
   // useSearchParams needs a Suspense boundary
   return (
     <Suspense fallback={null}>
-      <RecordsInner initialRows={initialRows} />
+      <RecordsInner initialRows={initialRows} lgus={lgus} />
     </Suspense>
   );
 }
 
-function RecordsInner({ initialRows }: { initialRows: CardRecord[] }) {
+function RecordsInner({ initialRows, lgus }: { initialRows: CardRecord[]; lgus: Lgu[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -540,7 +543,7 @@ function RecordsInner({ initialRows }: { initialRows: CardRecord[] }) {
               </div>
             </div>
 
-            <AddRecordDialog existingIds={rows.map((r) => r.id)} onAdd={handleAdd} />
+            <AddRecordDialog existingIds={rows.map((r) => r.id)} lgus={lgus} onAdd={handleAdd} />
           </div>
 
           <Table>

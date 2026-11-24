@@ -26,6 +26,7 @@ import type {
   NewRecordInput,
   PrivilegeType,
 } from "./types";
+import type { Lgu } from "@/lib/lgus";
 import {
   CARD_SYSTEM_LABELS,
   DISABILITY_TYPES,
@@ -108,10 +109,11 @@ export function Field({
 
 type Props = {
   existingIds: string[];
+  lgus: Lgu[];
   onAdd: (input: NewRecordInput) => void;
 };
 
-export default function AddRecordDialog({ existingIds, onAdd }: Props) {
+export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Errors>({});
@@ -343,13 +345,27 @@ export default function AddRecordDialog({ existingIds, onAdd }: Props) {
                 label="Issuing LGU*"
                 error={errors.issuingLgu}
               >
-                <Input
-                  id="issuingLgu"
-                  placeholder="e.g. Quezon City"
+                <Select
                   value={form.issuingLgu}
-                  onChange={(e) => setField("issuingLgu", e.target.value)}
-                  aria-invalid={!!errors.issuingLgu}
-                />
+                  onValueChange={(v: string | null) =>
+                    setField("issuingLgu", v ?? "")
+                  }
+                >
+                  <SelectTrigger
+                    id="issuingLgu"
+                    className="w-full"
+                    aria-invalid={!!errors.issuingLgu}
+                  >
+                    <SelectValue placeholder="Select a city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lgus.map((lgu) => (
+                      <SelectItem key={lgu.id} value={lgu.municipality_name}>
+                        {lgu.municipality_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
               <Field
                 id="issuingDate"

@@ -32,6 +32,7 @@ struct BusinessSignupView: View {
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var isSendingOTP = false
+    @State private var isClaimingAccount = false
     @State private var accountError: String? = nil
 
     // Stage 3: OTP Navigation
@@ -128,11 +129,13 @@ struct BusinessSignupView: View {
         .navigationDestination(isPresented: $navigateToOTP) {
             OTPVerificationView(
                 email: otpEmail,
-                isEmailVerified: $isEmailVerified,
-                onOTPVerified: {
-                    try await completeBusinessClaim()
-                }
+                isEmailVerified: $isEmailVerified
             )
+        }
+        .onChange(of: isEmailVerified) { _, verified in
+            if verified && !isClaimingAccount {
+                startBusinessClaim()
+            }
         }
     }
 
@@ -590,8 +593,14 @@ struct BusinessSignupView: View {
                 inlineErrorBanner(accountError)
             }
 
-            // Primary Continue to Verification Button
-            Button(action: handleContinueToVerification) {
+            // Primary Continue to Verification / Complete Registration Button
+            Button(action: {
+                if isEmailVerified {
+                    startBusinessClaim()
+                } else {
+                    handleContinueToVerification()
+                }
+            }) {
                 HStack(spacing: 8) {
                     if isSendingOTP {
                         ProgressView()
@@ -599,8 +608,14 @@ struct BusinessSignupView: View {
                         Text("Sending Verification Code...")
                             .font(.kilala(.headline, weight: .bold))
                             .foregroundColor(.white)
+                    } else if isClaimingAccount {
+                        ProgressView()
+                            .tint(.white)
+                        Text("Creating Account...")
+                            .font(.kilala(.headline, weight: .bold))
+                            .foregroundColor(.white)
                     } else {
-                        Text("Continue to Verification")
+                        Text(isEmailVerified ? "Complete Registration" : "Continue to Verification")
                             .font(.kilala(.headline, weight: .bold))
                             .foregroundColor(.white)
                     }
@@ -610,8 +625,8 @@ struct BusinessSignupView: View {
                 .background(Color.kilalaGreen)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            .disabled(!isStage2Valid || isSendingOTP)
-            .opacity((!isStage2Valid || isSendingOTP) ? 0.55 : 1.0)
+            .disabled(!isStage2Valid || isSendingOTP || isClaimingAccount)
+            .opacity((!isStage2Valid || isSendingOTP || isClaimingAccount) ? 0.55 : 1.0)
         }
     }
 
@@ -780,6 +795,26 @@ struct BusinessSignupView: View {
                 await MainActor.run {
                     self.accountError = error.localizedDescription
                     self.isSendingOTP = false
+                }
+            }
+        }
+    }
+
+    private func startBusinessClaim() {
+        accountError = nil
+        focusedField = nil
+        isClaimingAccount = true
+
+        Task {
+            do {
+                try await completeBusinessClaim()
+                await MainActor.run {
+                    self.isClaimingAccount = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.accountError = error.localizedDescription
+                    self.isClaimingAccount = false
                 }
             }
         }
