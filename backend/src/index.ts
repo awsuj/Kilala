@@ -1919,6 +1919,75 @@ app.patch(
   }
 );
 
+// 5.4.1 Register an Accredited Business
+// The LGU adds the business first (no login account yet); the merchant later
+// claims it from the app by verifying against this accredited record. To satisfy
+// the existing NOT NULL columns without a schema change, we create a locked
+// placeholder user (is_active = false, random hash) the merchant overwrites on claim.
+app.post(
+  '/api/lgu/businesses',
+  authenticateToken,
+  requireRole(['LGU_ADMIN', 'SUPERADMIN']),
+  async (req: AuthRequest, res: Response) => {
+    const { business_name, business_permit_no, tin_number } = req.body;
+
+    if (!business_name || !business_permit_no || !tin_number) {
+      return res.status(400).json({ error: 'Missing required business fields' });
+    }
+
+    let client: any = null;
+    try {
+      const { all, lguId } = await resolveCityFilter(req);
+      if (all) {
+        return res.status(400).json({ error: 'Select a city before registering a business' });
+      }
+      const lgu_id = lguId!;
+
+      // Unique, non-guessable placeholder address. Must not be derived from the
+      // permit: slugging is lossy, so distinct permits could collide on the
+      // users.email UNIQUE and surface as a false "permit already exists" 409.
+      // Business-level dedupe is enforced by business_profiles.business_permit_no.
+      const placeholderEmail = `unclaimed-${crypto.randomUUID()}@unclaimed.kilala`;
+      const randomHash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const userRes = await client.query(
+        `INSERT INTO users (email, password_hash, role, is_active)
+         VALUES ($1, $2, 'BUSINESS', FALSE)
+         RETURNING id`,
+        [placeholderEmail, randomHash]
+      );
+      const newUserId = userRes.rows[0].id;
+
+      const bizRes = await client.query(
+        `INSERT INTO business_profiles (
+           user_id, lgu_id, business_name, business_permit_no, tin_number, address
+         ) VALUES ($1, $2, $3, $4, $5, '')
+         RETURNING *, FALSE AS is_active,
+           (SELECT municipality_name FROM lgus WHERE id = $2) AS lgu_name`,
+        [newUserId, lgu_id, business_name, business_permit_no, tin_number]
+      );
+
+      await client.query('COMMIT');
+      res.status(201).json(bizRes.rows[0]);
+    } catch (error: any) {
+      if (client) await client.query('ROLLBACK');
+      if (error instanceof LguIdError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Business Permit No. already exists' });
+      }
+      console.error('Error registering business:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      if (client) client.release();
+    }
+  }
+);
+
 // 5.5 List Accredited Businesses in LGU
 app.get(
   '/api/lgu/businesses',
@@ -1930,13 +1999,13 @@ app.get(
 
       const result = all
         ? await pool.query(
-            `SELECT bp.*, u.email
+            `SELECT bp.*, u.email, u.is_active
              FROM business_profiles bp
              JOIN users u ON u.id = bp.user_id
              ORDER BY bp.created_at DESC`
           )
         : await pool.query(
-            `SELECT bp.*, u.email
+            `SELECT bp.*, u.email, u.is_active
              FROM business_profiles bp
              JOIN users u ON u.id = bp.user_id
              WHERE bp.lgu_id = $1
