@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   { label: "Businesses", href: "/dashboard/businesses" },
   { label: "Reports", href: "/dashboard/reports" },
   { label: "Accounts", href: "/dashboard/accounts", superAdminOnly: true },
+  { label: "Settings", href: "/dashboard/settings" },
 ];
 
 export default function Sidebar({
@@ -109,12 +110,18 @@ export default function Sidebar({
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-foreground">LGU Admin</p>
+            <p className="truncate text-sm font-bold text-foreground">
+              LGU Admin
+            </p>
             <p className="truncate text-xs text-muted-foreground">{email}</p>
           </div>
         </div>
         <form action={logoutAction} className="mt-3">
-          <Button type="submit" variant="outline" className="w-full bg-card font-bold">
+          <Button
+            type="submit"
+            variant="outline"
+            className="w-full bg-card font-bold"
+          >
             <LogOut className="h-4 w-4" aria-hidden="true" />
             Log out
           </Button>
