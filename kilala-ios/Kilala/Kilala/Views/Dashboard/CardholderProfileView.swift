@@ -96,6 +96,20 @@ struct CardholderProfileView: View {
         return "\(formattedIssue) / \(formattedExpiry)"
     }
 
+    private var formattedEmergencyContactNumberForDisplay: String {
+        let digits = extractLocalMobileDigits(from: emergencyContactNumber)
+        guard !digits.isEmpty else { return "" }
+        return "+63 \(formatLocalMobileDigits(digits))"
+    }
+
+    private var draftEmergencyContactDigits: String {
+        extractLocalMobileDigits(from: draftEmergencyContactNumber)
+    }
+
+    private var hasIncompleteEmergencyContactNumber: Bool {
+        !draftEmergencyContactDigits.isEmpty && draftEmergencyContactDigits.count < 10
+    }
+
     private var statusBadgeAppearance: (icon: String, label: String, foreground: Color, background: Color) {
         let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         switch normalized {
@@ -134,7 +148,8 @@ struct CardholderProfileView: View {
     private var canSaveChanges: Bool {
         !isSaving &&
         !isLoadingProfile &&
-        !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !hasIncompleteEmergencyContactNumber
     }
 
     // MARK: - Initialization
@@ -473,12 +488,7 @@ struct CardholderProfileView: View {
                     text: $draftEmergencyContactName
                 )
 
-                editableTextField(
-                    label: "EMERGENCY CONTACT NUMBER",
-                    placeholder: "+63 9XX XXX XXXX",
-                    text: $draftEmergencyContactNumber,
-                    keyboardType: .phonePad
-                )
+                editableEmergencyPhoneField
 
                 editableTextField(
                     label: "EMAIL",
@@ -489,7 +499,7 @@ struct CardholderProfileView: View {
                 )
             } else {
                 let trimmedContactName = emergencyContactName.trimmingCharacters(in: .whitespacesAndNewlines)
-                let trimmedContactNumber = emergencyContactNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayContactNumber = formattedEmergencyContactNumberForDisplay
                 let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 detailField(
@@ -502,10 +512,10 @@ struct CardholderProfileView: View {
 
                 detailField(
                     label: "EMERGENCY CONTACT NUMBER",
-                    value: trimmedContactNumber.isEmpty
+                    value: displayContactNumber.isEmpty
                         ? Self.emptyEmergencyContactText
-                        : trimmedContactNumber,
-                    isMutedValue: trimmedContactNumber.isEmpty
+                        : displayContactNumber,
+                    isMutedValue: displayContactNumber.isEmpty
                 )
 
                 detailField(
@@ -678,6 +688,74 @@ struct CardholderProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var editableEmergencyPhoneField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("EMERGENCY CONTACT NUMBER")
+
+            HStack(spacing: 10) {
+                Text("+63")
+                    .font(.kilala(.body))
+                    .foregroundColor(.kilalaInk)
+                    .fixedSize()
+
+                Rectangle()
+                    .fill(Color.kilalaBorder)
+                    .frame(width: 1, height: 22)
+                    .accessibilityHidden(true)
+
+                TextField(
+                    "xxx xxx xxxx",
+                    text: $draftEmergencyContactNumber,
+                    prompt: Text(verbatim: "xxx xxx xxxx").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                )
+                .font(.kilala(.body))
+                .foregroundColor(.kilalaInk)
+                .tint(.kilalaGreen)
+                .keyboardType(.numberPad)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .multilineTextAlignment(.leading)
+                .onChange(of: draftEmergencyContactNumber) { _, newValue in
+                    let normalizedDigits = extractLocalMobileDigits(from: newValue)
+                    let formatted = formatLocalMobileDigits(normalizedDigits)
+                    if formatted != newValue {
+                        draftEmergencyContactNumber = formatted
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 48)
+            .background(Color.kilalaPaper.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        hasIncompleteEmergencyContactNumber
+                            ? Color.kilalaStateInvalid.opacity(0.65)
+                            : Color.kilalaBorder,
+                        lineWidth: 1
+                    )
+            )
+
+            if hasIncompleteEmergencyContactNumber {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundColor(.kilalaStateInvalid)
+                        .accessibilityHidden(true)
+
+                    Text("Please enter a valid 10-digit mobile number.")
+                        .font(.kilala(.caption, weight: .semibold))
+                        .foregroundColor(.kilalaStateInvalid)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func editableTextField(
         label: String,
         placeholder: String,
@@ -711,6 +789,46 @@ struct CardholderProfileView: View {
     }
 
     // MARK: - Helper Methods
+
+    /// Extracts the 10-digit Philippine subscriber number after `+63` (or `63` / leading `0`),
+    /// stripping all non-digit characters and capping at 10 digits.
+    private func extractLocalMobileDigits(from raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var digits = String(trimmed.filter(\.isNumber))
+
+        if trimmed.hasPrefix("+63") && digits.hasPrefix("63") {
+            digits = String(digits.dropFirst(2))
+        } else if digits.count == 12 && digits.hasPrefix("63") {
+            digits = String(digits.dropFirst(2))
+        } else if digits.count == 11 && digits.hasPrefix("0") {
+            digits = String(digits.dropFirst(1))
+        }
+
+        if digits.count > 10 {
+            digits = String(digits.prefix(10))
+        }
+
+        return digits
+    }
+
+    /// Formats up to 10 digits into the `xxx xxx xxxx` spacing pattern.
+    private func formatLocalMobileDigits(_ rawDigits: String) -> String {
+        let digits = String(rawDigits.filter(\.isNumber).prefix(10))
+        guard !digits.isEmpty else { return "" }
+
+        let firstGroup = String(digits.prefix(3))
+        if digits.count <= 3 {
+            return firstGroup
+        }
+
+        let secondGroup = String(digits.dropFirst(3).prefix(3))
+        if digits.count <= 6 {
+            return "\(firstGroup) \(secondGroup)"
+        }
+
+        let thirdGroup = String(digits.dropFirst(6).prefix(4))
+        return "\(firstGroup) \(secondGroup) \(thirdGroup)"
+    }
 
     private func validPhotoURL(from raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -776,7 +894,10 @@ struct CardholderProfileView: View {
         address = profile.address
 
         emergencyContactName = profile.emergencyContactName ?? ""
-        emergencyContactNumber = profile.resolvedEmergencyContactNumber
+        let contactDigits = extractLocalMobileDigits(from: profile.resolvedEmergencyContactNumber)
+        emergencyContactNumber = contactDigits.count == 10
+            ? "+63\(contactDigits)"
+            : profile.resolvedEmergencyContactNumber
 
         if let profileEmail = profile.email,
            !profileEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -790,7 +911,8 @@ struct CardholderProfileView: View {
 
     private func beginEditing() {
         draftEmergencyContactName = emergencyContactName.trimmingCharacters(in: .whitespacesAndNewlines)
-        draftEmergencyContactNumber = emergencyContactNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingDigits = extractLocalMobileDigits(from: emergencyContactNumber)
+        draftEmergencyContactNumber = formatLocalMobileDigits(existingDigits)
         draftEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         withAnimation(.easeInOut(duration: 0.2)) {
             isEditing = true
@@ -799,7 +921,8 @@ struct CardholderProfileView: View {
 
     private func cancelEditing() {
         draftEmergencyContactName = emergencyContactName
-        draftEmergencyContactNumber = emergencyContactNumber
+        let existingDigits = extractLocalMobileDigits(from: emergencyContactNumber)
+        draftEmergencyContactNumber = formatLocalMobileDigits(existingDigits)
         draftEmail = email
         withAnimation(.easeInOut(duration: 0.2)) {
             isEditing = false
@@ -832,6 +955,14 @@ struct CardholderProfileView: View {
             return
         }
 
+        let contactDigits = draftEmergencyContactDigits
+        guard contactDigits.isEmpty || contactDigits.count == 10 else {
+            errorMessage = "Please enter a valid 10-digit mobile number."
+            showErrorAlert = true
+            return
+        }
+
+        let formattedEmergencyContactPayload = contactDigits.isEmpty ? "" : "+63\(contactDigits)"
         let currentVerifiedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         isSaving = true
 
@@ -841,7 +972,7 @@ struct CardholderProfileView: View {
                     token: activeToken,
                     email: trimmedEmail,
                     emergencyContactName: draftEmergencyContactName,
-                    emergencyContactNumber: draftEmergencyContactNumber
+                    emergencyContactNumber: formattedEmergencyContactPayload
                 )
                 await MainActor.run {
                     isSaving = false
