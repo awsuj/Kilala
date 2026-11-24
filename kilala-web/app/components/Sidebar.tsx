@@ -9,19 +9,31 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { logoutAction } from "@/app/dashboard/actions";
 
-const navItems = [
+type NavItem = { label: string; href: string; superAdminOnly?: boolean };
+
+const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Records", href: "/dashboard/records" },
   { label: "Businesses", href: "/dashboard/businesses" },
   { label: "Reports", href: "/dashboard/reports" },
-  { label: "Settings", href: "/dashboard/settings" },
+  { label: "Accounts", href: "/dashboard/accounts", superAdminOnly: true },
 ];
 
-export default function Sidebar({ adminEmail }: { adminEmail?: string | null }) {
+export default function Sidebar({
+  adminEmail,
+  role,
+}: {
+  adminEmail?: string | null;
+  role?: string | null;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const email = adminEmail || "admin@lgu.gov.ph";
   const initials = email.slice(0, 2).toUpperCase();
+
+  const visibleItems = navItems.filter(
+    (item) => !item.superAdminOnly || role === "SUPERADMIN",
+  );
 
   // Retracted → just a floating button to bring the nav back.
   if (collapsed) {
@@ -63,7 +75,7 @@ export default function Sidebar({ adminEmail }: { adminEmail?: string | null }) 
           Navigation
         </p>
         <ul className="space-y-1">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const isActive =
               item.href === "/dashboard"
                 ? pathname === item.href

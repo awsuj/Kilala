@@ -3,7 +3,7 @@
 -- Schema by Joshua Calibo (Last updated: 10/21/2026)
 
 -- 1. Custom ENUM Types
-CREATE TYPE user_role AS ENUM ('LGU_ADMIN', 'CARDHOLDER', 'BUSINESS');
+CREATE TYPE user_role AS ENUM ('LGU_ADMIN', 'CARDHOLDER', 'BUSINESS', 'SUPERADMIN');
 CREATE TYPE privilege_type AS ENUM ('PWD', 'SENIOR_CITIZEN');
 CREATE TYPE card_status AS ENUM ('ACTIVE', 'EXPIRED', 'REVOKED', 'SUSPENDED');
 CREATE TYPE business_category AS ENUM (
@@ -153,4 +153,15 @@ CREATE TABLE transactions (
 );
 
 CREATE INDEX idx_transactions_business_created_at ON transactions(business_id, created_at DESC);
+
+-- 6. OTP Verifications (Email OTP Verification for Cardholder Registration)
+CREATE TABLE otp_verifications (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    otp VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    verified BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX idx_otp_verifications_email ON otp_verifications(email);
 

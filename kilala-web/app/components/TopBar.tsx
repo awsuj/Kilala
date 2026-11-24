@@ -1,14 +1,24 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { Search, Bell } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Bell } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { setCity } from "@/lib/city-actions";
+import { ALL_CITIES } from "@/lib/city-constants";
+import type { Lgu } from "@/lib/lgus";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/dashboard/records": "Records",
   "/dashboard/businesses": "Businesses",
   "/dashboard/reports": "Reports",
-  "/dashboard/settings": "Settings",
+  "/dashboard/accounts": "Accounts",
 };
 
 function titleFor(pathname: string): string {
@@ -20,8 +30,28 @@ function titleFor(pathname: string): string {
   return match ? TITLES[match] : "Dashboard";
 }
 
-export default function TopBar() {
+type Props = {
+  role?: string | null;
+  lgus?: Lgu[];
+  selectedCity?: string | null;
+};
+
+export default function TopBar({ role, lgus = [], selectedCity }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleCityChange = async (lguId: string | null) => {
+    if (!lguId) return;
+    await setCity(lguId);
+    router.refresh();
+  };
+
+  // base-ui's SelectValue renders the raw value (the LGU id) unless given an
+  // items map to look up each value's label.
+  const cityItems = {
+    [ALL_CITIES]: "All cities",
+    ...Object.fromEntries(lgus.map((lgu) => [lgu.id, lgu.municipality_name])),
+  };
 
   return (
     <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-3">
@@ -30,21 +60,30 @@ export default function TopBar() {
       </h1>
 
       <div className="flex items-center gap-3">
-        <div className="relative">
-          <label htmlFor="search" className="sr-only">
-            Search records
-          </label>
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-ink"
-            aria-hidden="true"
-          />
-          <input
-            id="search"
-            type="search"
-            placeholder="Search records..."
-            className="kilala-input w-64 bg-white py-2.5 pl-9 text-sm"
-          />
-        </div>
+        {role === "SUPERADMIN" && (
+          <Select
+            items={cityItems}
+            value={selectedCity ?? ALL_CITIES}
+            onValueChange={handleCityChange}
+          >
+            <SelectTrigger
+              className="w-48"
+              aria-label="City"
+            >
+              <SelectValue placeholder="All cities" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem key={ALL_CITIES} value={ALL_CITIES}>
+                All cities
+              </SelectItem>
+              {lgus.map((lgu) => (
+                <SelectItem key={lgu.id} value={lgu.id}>
+                  {lgu.municipality_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <button
           type="button"

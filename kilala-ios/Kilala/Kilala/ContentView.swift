@@ -14,21 +14,25 @@ struct ContentView: View {
         if let session = session {
             switch session.user.role {
             case .cardholder:
-                DigitalIDView(token: session.token) {
+                CardholderDashboardView(token: session.token) {
                     APIService.shared.authToken = nil
+                    APIService.shared.currentUserEmail = nil
                     self.session = nil
                 }
             case .business:
-                QRScannerView(token: session.token) {
+                BusinessDashboardView(token: session.token, userEmail: session.user.email) {
                     APIService.shared.authToken = nil
+                    APIService.shared.currentUserEmail = nil
+                    APIService.shared.currentBusinessProfile = nil
                     self.session = nil
                 }
-            case .lguAdmin:
+            case .lguAdmin, .superAdmin:
                 VStack(spacing: 16) {
                     Text("Please use the Kilala Web Portal for LGU Admin access.")
                         .multilineTextAlignment(.center)
                     Button("Logout") {
                         APIService.shared.authToken = nil
+                        APIService.shared.currentUserEmail = nil
                         self.session = nil
                     }
                 }

@@ -12,6 +12,7 @@ enum UserRole: String, Codable {
     case cardholder = "CARDHOLDER"
     case business = "BUSINESS"
     case lguAdmin = "LGU_ADMIN"
+    case superAdmin = "SUPERADMIN"
 }
 
 // Matches the user object returned from POST /api/auth/login endpoint

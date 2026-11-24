@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
-import { ALLOWED_ROLE } from "@/lib/token";
+import { isAllowedRole, landingPathForRole } from "@/lib/token";
 
 export default async function Home() {
   const user = await getCurrentUser();
-  redirect(user?.role === ALLOWED_ROLE ? "/dashboard" : "/login");
+  redirect(isAllowedRole(user?.role) ? landingPathForRole(user?.role) : "/login");
 }

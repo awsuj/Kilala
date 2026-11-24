@@ -18,7 +18,7 @@ VALUES (
     'Roberto', 'Reyes', 'PDAO / OSCA', 'Records Officer'
 );
 
--- 4. Insert Cardholder Profiles (1 Active PWD, 1 Active Senior Citizen)
+-- 4. Insert Cardholder Profiles (1 Active PWD, 1 Active Senior Citizen, 1 Unclaimed PWD)
 INSERT INTO cardholder_profiles (
     id, user_id, lgu_id, issued_by_admin_id, lgu_id_number,
     first_name, middle_name, last_name, date_of_birth, sex, address,
@@ -44,6 +44,16 @@ INSERT INTO cardholder_profiles (
     'Maria', 'Clara', 'Bautista', '1958-11-02', 'Female', '45 Poblacion, Makati City',
     '+639187654321', 'SENIOR_CITIZEN', NULL, 'ACTIVE',
     'KILALA-QR-MKT-OSCA-08912-SECRET', CURRENT_DATE, NULL
+),
+(
+    '44444444-4444-4444-4444-444444444443',
+    NULL,
+    '11111111-1111-1111-1111-111111111111',
+    '33333333-3333-3333-3333-333333333331',
+    'MKT-PWD-2026-TEST-001',
+    'Ana', 'Marie', 'Santos', '1999-03-17', 'Female', '123 Test Street, Makati City',
+    '+639171234599', 'PWD', 'Visual Impairment', 'ACTIVE',
+    'KILALA-QR-MKT-PWD-TEST-001-SECRET', CURRENT_DATE, CURRENT_DATE + INTERVAL '3 years'
 );
 
 -- 5. Insert Business Profile
@@ -86,4 +96,33 @@ INSERT INTO transactions (
     200.00,
     CURRENT_TIMESTAMP
 );
+
+-- 7. Metro Manila (NCR) LGUs for the city dropdown (Makati 'MKT' already inserted above).
+INSERT INTO lgus (lgu_code, municipality_name, province, region)
+VALUES
+  ('CAL', 'Caloocan', NULL, 'NCR'),
+  ('LPN', 'Las Piñas', NULL, 'NCR'),
+  ('MKT', 'Makati City', NULL, 'NCR'),
+  ('MAL', 'Malabon', NULL, 'NCR'),
+  ('MND', 'Mandaluyong', NULL, 'NCR'),
+  ('MNL', 'Manila', NULL, 'NCR'),
+  ('MRK', 'Marikina', NULL, 'NCR'),
+  ('MUN', 'Muntinlupa', NULL, 'NCR'),
+  ('NAV', 'Navotas', NULL, 'NCR'),
+  ('PAR', 'Parañaque', NULL, 'NCR'),
+  ('PSY', 'Pasay', NULL, 'NCR'),
+  ('PSG', 'Pasig', NULL, 'NCR'),
+  ('PAT', 'Pateros', NULL, 'NCR'),
+  ('QC', 'Quezon City', NULL, 'NCR'),
+  ('SJN', 'San Juan', NULL, 'NCR'),
+  ('TAG', 'Taguig', NULL, 'NCR'),
+  ('VAL', 'Valenzuela', NULL, 'NCR')
+ON CONFLICT (lgu_code) DO NOTHING;
+
+-- 8. Super admin (full access, not tied to a city).
+--    Real bcrypt hash of the password 'Kilala2026' — matches the live DB account,
+--    so the same password works everywhere (no mock, no env var needed).
+INSERT INTO users (id, email, password_hash, role) VALUES
+('22222222-2222-2222-2222-2222222229a1', 'superadmin@kilala.gov.ph', '$2b$10$Wlqf3BaNqjppdLH0Dhb9KuLOkmtpZdgR.s0Swq38Ye3UeeymOqKQC', 'SUPERADMIN')
+ON CONFLICT (email) DO NOTHING;
 

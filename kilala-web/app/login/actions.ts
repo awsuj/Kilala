@@ -2,9 +2,9 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { AUTH_COOKIE, ALLOWED_ROLE } from "@/lib/token";
+import { AUTH_COOKIE, isAllowedRole, landingPathForRole } from "@/lib/token";
 
-const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
 
 export interface LoginState {
   error?: string;
@@ -49,7 +49,7 @@ export async function loginAction(
   const user = (body as { user?: { role?: string } }).user;
   // The LGU portal is administrators only — valid cardholder/business logins
   // are still rejected here.
-  if (user?.role !== ALLOWED_ROLE) {
+  if (!isAllowedRole(user?.role)) {
     return { error: "This portal is for LGU administrators only.", email };
   }
 
@@ -62,5 +62,5 @@ export async function loginAction(
     path: "/",
   });
 
-  redirect("/dashboard");
+  redirect(landingPathForRole(user?.role));
 }
