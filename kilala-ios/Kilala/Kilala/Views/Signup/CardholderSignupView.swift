@@ -297,7 +297,7 @@ struct CardholderSignupView: View {
                         .multilineTextAlignment(.center)
 
                         Text("\(privilegeType.displayName) · \(cardIdNumber.trimmingCharacters(in: .whitespacesAndNewlines))")
-                            .font(.kilalaMono(.caption, weight: .medium))
+                            .font(.kilalaMono(.callout, weight: .medium))
                             .foregroundColor(.kilalaInkSecondary)
                             .multilineTextAlignment(.center)
                     }
