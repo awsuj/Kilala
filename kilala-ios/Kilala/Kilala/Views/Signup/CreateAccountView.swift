@@ -242,28 +242,31 @@ struct CreateAccountView: View {
 
                     // Action Buttons
                     VStack(spacing: 14) {
-                        // Send OTP to Email Button
+                        // Send OTP to Email Button (Green Outline Style Mirroring Change Password)
                         Button(action: handleSendOTP) {
                             HStack(spacing: 8) {
                                 if isSendingOTP {
                                     ProgressView()
-                                        .tint(isEmailVerified ? .kilalaGreen : .white)
+                                        .tint(.kilalaGreen)
                                     Text("Sending Verification Code...")
-                                        .font(.kilala(.headline, weight: .bold))
-                                        .foregroundColor(isEmailVerified ? .kilalaGreen : .white)
+                                        .font(.kilala(.callout, weight: .bold))
                                 } else {
-                                    Text(isEmailVerified ? "Resend OTP to Email" : "Send OTP to email")
-                                        .font(.kilala(.headline, weight: .bold))
-                                        .foregroundColor(isEmailVerified ? .kilalaGreen : .white)
+                                    Image(systemName: "envelope.fill")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .accessibilityHidden(true)
+
+                                    Text(isEmailVerified ? "Resend OTP to email" : "Send OTP to email")
+                                        .font(.kilala(.callout, weight: .bold))
                                 }
                             }
+                            .foregroundColor(.kilalaGreen)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .background(isEmailVerified ? Color.white : Color.kilalaGreen)
+                            .frame(height: 48)
+                            .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(isEmailVerified ? Color.kilalaMintBorder : Color.clear, lineWidth: 1)
+                                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
                             )
                         }
                         .disabled(isSendingOTP || isCreatingAccount)
