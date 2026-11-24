@@ -1620,6 +1620,81 @@ app.get(
   }
 );
 
+// 5.9 Change the logged-in admin's own password
+app.patch(
+  "/api/lgu/me/password",
+  authenticateToken,
+  requireRole(["LGU_ADMIN", "SUPERADMIN"]),
+  async (req: AuthRequest, res: Response) => {
+    const { currentPassword, newPassword } = req.body ?? {};
+
+    if (
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string" ||
+      !currentPassword ||
+      !newPassword
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Current and new password are required" });
+    }
+    if (newPassword.length < 8) {
+      return res
+        .status(400)
+        .json({ error: "New password must be at least 8 characters" });
+    }
+    if (Buffer.byteLength(newPassword, "utf8") > 72) {
+      // bcrypt only reads the first 72 bytes, so reject longer ones
+      return res
+        .status(400)
+        .json({ error: "New password must be at most 72 bytes" });
+    }
+    if (newPassword === currentPassword) {
+      return res
+        .status(400)
+        .json({ error: "New password must be different from the current one" });
+    }
+
+    try {
+      // The id comes from the verified token, never from the request body.
+      const result = await pool.query(
+        "SELECT password_hash FROM users WHERE id = $1",
+        [req.user!.id],
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      const storedHash: string = result.rows[0].password_hash;
+
+      // Same test-account shortcut the login route uses.
+      let isValidPassword = false;
+      if (storedHash === "$2b$10$MockHashForTestingOnly123456789012") {
+        isValidPassword =
+          currentPassword === "MockHashForTestingOnly123456789012";
+      } else {
+        isValidPassword = await bcrypt.compare(currentPassword, storedHash);
+      }
+
+      if (!isValidPassword) {
+        // 400, not 401, so the web portal doesn't mistake this for an expired session.
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+
+      const newHash = await bcrypt.hash(newPassword, 10);
+      await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [
+        newHash,
+        req.user!.id,
+      ]);
+
+      res.status(200).json({ message: "Password updated" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
 // ============================================================================
 // 6. LGU ADMIN MANAGEMENT ROUTES
 // ============================================================================
