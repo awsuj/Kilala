@@ -72,7 +72,16 @@ struct CardholderDashboardView: View {
                     }
 
                 case .profile:
-                    Color.clear
+                    NavigationStack {
+                        CardholderProfileView(
+                            token: token,
+                            profile: profile,
+                            onLogout: onLogout
+                        ) { updatedProfile in
+                            profile = updatedProfile
+                        }
+                    }
+                    .tint(.kilalaGreen)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
