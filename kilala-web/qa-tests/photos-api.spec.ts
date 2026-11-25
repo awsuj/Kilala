@@ -63,4 +63,14 @@ test.describe("Cardholder photo upload/serve — /api/photos", () => {
     const res = await request.get(`${WEB}/api/photos/cardholders/does-not-exist.png`);
     expect(res.status()).toBe(404);
   });
+
+  test("served photos carry X-Content-Type-Options: nosniff", async ({ request }) => {
+    const up = await request.post(`${WEB}/api/photos`, {
+      headers: { Cookie: adminCookie() },
+      multipart: { photo: { name: "x.png", mimeType: "image/png", buffer: PNG } },
+    });
+    const { url } = await up.json();
+    const got = await request.get(url);
+    expect(got.headers()["x-content-type-options"]).toBe("nosniff");
+  });
 });

@@ -88,6 +88,23 @@ test.describe("Add Record — cardholder photo", () => {
     ).toBeVisible();
   });
 
+  test("Add record is disabled while a photo upload is in flight", async ({ page, request }) => {
+    await loginAsAdmin(request, page);
+    await page.route("**/api/photos", async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+    const dialog = await openAddRecord(page);
+    await dialog.locator('input[type="file"]').setInputFiles({
+      name: "f.png",
+      mimeType: "image/png",
+      buffer: PNG,
+    });
+    await expect(dialog.getByRole("button", { name: "Add record" })).toBeDisabled();
+    await expect(dialog.locator('img[src*="/api/photos/cardholders/"]')).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Add record" })).toBeEnabled();
+  });
+
   test("adds a record with no photo (photo stays optional)", async ({ page, request }) => {
     await loginAsAdmin(request, page);
     const dialog = await openAddRecord(page);

@@ -120,6 +120,7 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Errors>({});
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const setField = (field: keyof FormState, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -188,6 +189,7 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (photoUploading) return; // don't save before the photo finishes uploading
     const found = validate();
     const { privilegeType, disabilityNature, cardSystemType } = form;
     if (Object.keys(found).length > 0 || privilegeType === "") {
@@ -333,6 +335,7 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
               <PhotoField
                 value={form.photoUrl || null}
                 onChange={(url) => setField("photoUrl", url ?? "")}
+                onUploadingChange={setPhotoUploading}
               />
             </Field>
 
@@ -545,7 +548,9 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
               >
                 Cancel
               </Button>
-              <Button type="submit">Add record</Button>
+              <Button type="submit" disabled={photoUploading}>
+                Add record
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

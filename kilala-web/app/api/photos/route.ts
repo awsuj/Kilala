@@ -17,6 +17,12 @@ export async function POST(req: Request) {
   if (user.role !== "LGU_ADMIN" && user.role !== "SUPERADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
+  // Reject oversized bodies up front, before buffering the whole multipart into
+  // the isolate's memory (the body is role-gated but the gate is a decodable cookie).
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (declared > MAX_BYTES + 64 * 1024)
+    return Response.json({ error: "Photo must be 5 MB or smaller." }, { status: 400 });
+
   const form = await req.formData();
   const file = form.get("photo");
   if (!(file instanceof File))
@@ -37,6 +43,8 @@ export async function POST(req: Request) {
     httpMetadata: { contentType: file.type },
   });
 
-  const origin = new URL(req.url).origin;
-  return Response.json({ url: `${origin}/api/photos/${key}` }, { status: 201 });
+  // Prefer the configured canonical origin so the persisted URL stays durable
+  // regardless of which host the upload came through (preview alias, localhost…).
+  const base = env.SITE_BASE_URL || new URL(req.url).origin;
+  return Response.json({ url: `${base}/api/photos/${key}` }, { status: 201 });
 }

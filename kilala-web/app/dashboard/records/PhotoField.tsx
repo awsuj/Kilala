@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 // Downscale to keep uploads small: longest side ≤ 1024 px, JPEG ~0.85.
@@ -25,9 +25,11 @@ async function downscale(blob: Blob, max = 1024, quality = 0.85): Promise<Blob> 
 export default function PhotoField({
   value,
   onChange,
+  onUploadingChange,
 }: {
   value: string | null;
   onChange: (url: string | null) => void;
+  onUploadingChange?: (uploading: boolean) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -36,15 +38,28 @@ export default function PhotoField({
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
 
+  const setUploading = (v: boolean) => {
+    setBusy(v);
+    onUploadingChange?.(v);
+  };
+
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setCameraOn(false);
   };
 
+  // Ensure the camera is released if the dialog closes while it's open.
+  useEffect(
+    () => () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
+
   const upload = async (blob: Blob) => {
     setError(null);
-    setBusy(true);
+    setUploading(true);
     try {
       const scaled = await downscale(blob);
       const fd = new FormData();
@@ -60,7 +75,7 @@ export default function PhotoField({
     } catch {
       setError("Couldn't process the image.");
     } finally {
-      setBusy(false);
+      setUploading(false);
     }
   };
 
