@@ -14,6 +14,12 @@
       "service": "kilala-web"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "CARDHOLDER_PHOTOS",
+      "bucket_name": "kilala-cardholder-photos"
+    }
+  ],
   "vars": {
     "API_BASE_URL": "https://kilala.onrender.com",
     "AUTH_COOKIE": "kilala_token"
