@@ -38,6 +38,7 @@ export type CardRecord = {
   pwd?: PwdDetails;
   expiry: string | null; // null = lifetime
   suspended: boolean;
+  photoUrl?: string | null;
   history: HistoryEvent[];
 };
 
@@ -59,4 +60,5 @@ export type NewRecordInput = {
   issuingDate: string;
   privilegeType: PrivilegeType;
   pwd?: PwdDetails;
+  photoUrl?: string;
 };

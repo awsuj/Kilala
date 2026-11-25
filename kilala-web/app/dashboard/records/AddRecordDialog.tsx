@@ -27,6 +27,7 @@ import type {
   PrivilegeType,
 } from "./types";
 import type { Lgu } from "@/lib/lgus";
+import PhotoField from "./PhotoField";
 import {
   CARD_SYSTEM_LABELS,
   DISABILITY_TYPES,
@@ -52,6 +53,7 @@ type FormState = {
   disabilityType: string;
   disabilityNature: DisabilityNature | "";
   cardSystemType: CardSystemType | "";
+  photoUrl: string;
 };
 type Errors = Partial<Record<keyof FormState, string>>;
 
@@ -69,6 +71,7 @@ const emptyForm: FormState = {
   disabilityType: "",
   disabilityNature: "",
   cardSystemType: "",
+  photoUrl: "",
 };
 
 export function Field({
@@ -203,6 +206,7 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
       issuingLgu: form.issuingLgu.trim(),
       issuingDate: form.issuingDate,
       privilegeType,
+      photoUrl: form.photoUrl || undefined,
     };
 
     if (privilegeType === "PWD") {
@@ -322,6 +326,13 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
                 value={form.address}
                 onChange={(e) => setField("address", e.target.value)}
                 aria-invalid={!!errors.address}
+              />
+            </Field>
+
+            <Field id="photo" label="Photo" optional>
+              <PhotoField
+                value={form.photoUrl || null}
+                onChange={(url) => setField("photoUrl", url ?? "")}
               />
             </Field>
 

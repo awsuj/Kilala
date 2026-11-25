@@ -235,12 +235,21 @@ function DetailsBody({
     <>
       <SheetHeader className="p-5 pr-12">
         <div className="flex items-center gap-3">
-          <div
-            aria-hidden
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-surface text-sm font-bold text-kilala-green"
-          >
-            {initials}
-          </div>
+          {record.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={record.photoUrl}
+              alt=""
+              className="size-11 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <div
+              aria-hidden
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-surface text-sm font-bold text-kilala-green"
+            >
+              {initials}
+            </div>
+          )}
           <div className="min-w-0">
             <SheetTitle className="truncate text-lg">
               <b>{formatName(record)}</b>
