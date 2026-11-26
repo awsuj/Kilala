@@ -241,6 +241,130 @@ class APIService {
         return registrationResponse
     }
 
+    func verifyBusiness(
+        businessName: String,
+        lgu: String,
+        lguId: UUID? = nil,
+        tin: String,
+        permitNumber: String
+    ) async throws -> BusinessVerificationResponse {
+        guard let url = URL(string: "\(baseURL)/auth/business/verify") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: String] = [
+            "businessName": businessName,
+            "lgu": lgu,
+            "tin": tin,
+            "permitNumber": permitNumber
+        ]
+        if let lguId {
+            body["lgu_id"] = lguId.uuidString
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 400 || httpResponse.statusCode == 404 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "No matching accredited business record found. Please check your details."
+            )
+        }
+        
+        if httpResponse.statusCode == 403 || httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "This business record cannot be claimed."
+            )
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to verify business accreditation. Please try again."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(BusinessVerificationResponse.self, from: data)
+    }
+
+    func claimBusiness(
+        businessId: UUID,
+        email: String,
+        password: String,
+        branchName: String?,
+        category: String,
+        businessPermitNo: String,
+        address: String
+    ) async throws -> BusinessRegistrationResponse {
+        guard let url = URL(string: "\(baseURL)/auth/claim-business") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: Any] = [
+            "business_id": businessId.uuidString,
+            "email": email,
+            "password": password,
+            "category": category,
+            "business_permit_no": businessPermitNo,
+            "address": address
+        ]
+        if let branchName {
+            body["branch_name"] = branchName
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        if httpResponse.statusCode == 400 || httpResponse.statusCode == 404 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "Unable to claim business account. Please check your details."
+            )
+        }
+        
+        if httpResponse.statusCode == 403 || httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "This business account cannot be claimed."
+            )
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to complete business account creation. Please try again."
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let registrationResponse = try decoder.decode(BusinessRegistrationResponse.self, from: data)
+        self.authToken = registrationResponse.token
+        self.currentUserEmail = registrationResponse.user.email
+        self.currentBusinessProfile = registrationResponse.businessProfile
+        return registrationResponse
+    }
+
     func verifyRecord(
         privilegeType: String,
         cardIdNumber: String,
