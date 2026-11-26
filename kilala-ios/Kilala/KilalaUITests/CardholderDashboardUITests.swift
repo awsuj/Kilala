@@ -35,12 +35,11 @@ final class CardholderDashboardUITests: XCTestCase {
         try requireBackend()
         let app = logInAsCardholder()
 
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "The dashboard tab bar is missing")
+        // Since PR #58 the tab bar is the app's own (plain buttons), not a system tab bar.
         for tab in [UIText.homeTab, UIText.transactionsTab, UIText.profileTab] {
-            XCTAssertTrue(tabBar.buttons[tab].exists, "\(tab) tab missing")
+            XCTAssertTrue(app.buttons[tab].waitForExistence(timeout: 5), "\(tab) tab missing")
         }
-        XCTAssertTrue(tabBar.buttons[UIText.homeTab].isSelected, "The dashboard should open on Home")
+        XCTAssertTrue(app.buttons[UIText.homeTab].isSelected, "The dashboard should open on Home")
         attachScreenshot(app, named: "Dashboard tabs")
     }
 
@@ -57,11 +56,16 @@ final class CardholderDashboardUITests: XCTestCase {
         attachScreenshot(app, named: "QR hidden")
 
         // The cover is faded out rather than removed, so it stays in the accessibility
-        // tree; the caption below the code is what tells shown from hidden.
+        // tree; the caption below the code is what tells shown from hidden. Since PR #59
+        // the name is masked whenever the code is hidden.
         toggleQRCode(app, at: qrCode, expecting: UIText.qrShownCaption) { $0.tap() }
+        XCTAssertTrue(app.staticTexts[UITestAccounts.juanDisplayName].waitForExistence(timeout: 3),
+                      "Showing the QR code should show the full name")
         attachScreenshot(app, named: "QR shown")
 
         toggleQRCode(app, at: qrCode, expecting: UIText.qrHiddenCaption) { $0.tap() }
+        XCTAssertTrue(app.staticTexts[UIText.maskedName(UITestAccounts.juanDisplayName)].waitForExistence(timeout: 3),
+                      "Hiding the QR code should mask the name again")
     }
 
     /// A swipe on the QR code also shows it, and leaving the Home tab hides it again.
@@ -76,10 +80,9 @@ final class CardholderDashboardUITests: XCTestCase {
             $0.press(forDuration: 0.1, thenDragTo: $0.withOffset(CGVector(dx: 0, dy: -100)))
         }
 
-        let tabBar = app.tabBars.firstMatch
-        tabBar.buttons[UIText.transactionsTab].tap()
-        XCTAssertTrue(tabBar.buttons[UIText.transactionsTab].isSelected, "Transactions tab did not open")
-        tabBar.buttons[UIText.homeTab].tap()
+        app.buttons[UIText.transactionsTab].tap()
+        XCTAssertTrue(app.buttons[UIText.transactionsTab].isSelected, "Transactions tab did not open")
+        app.buttons[UIText.homeTab].tap()
         XCTAssertTrue(app.staticTexts[UIText.qrHiddenCaption].waitForExistence(timeout: 5),
                       "Coming back to Home should show the QR code hidden again")
     }
@@ -92,9 +95,9 @@ final class CardholderDashboardUITests: XCTestCase {
         let app = launchApp()
         logIn(app, email: UITestAccounts.cardholderPWD, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15),
+        XCTAssertTrue(app.staticTexts[UIText.cardholderHome].waitForExistence(timeout: 15),
                       "Cardholder should land on the dashboard", file: file, line: line)
-        XCTAssertTrue(app.staticTexts[UITestAccounts.juanFullName].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts[UIText.maskedName(UITestAccounts.juanDisplayName)].waitForExistence(timeout: 10),
                       "Digital ID details did not load", file: file, line: line)
         return app
     }

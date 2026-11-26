@@ -32,7 +32,13 @@ enum UITestAccounts {
     static let juanQRToken = "KILALA-QR-MKT-PWD-00481-SECRET"
     static let mariaCardNumber = "MKT-OSCA-2026-08912"
     static let mariaFullName = "Maria Clara Bautista"
+    /// How the cardholder Home tab shows the name since PR #67: middle name as an initial.
+    static let juanDisplayName = "Juan S. Dela Cruz"
+    static let mariaDisplayName = "Maria C. Bautista"
     static let businessName = "Mercury Drug"
+    /// Mercury Drug's accreditation details; its record is already claimed by `business`.
+    static let businessPermitNo = "MKT-BP-2026-99102"
+    static let businessTIN = "000-123-456-001"
 }
 
 /// The unclaimed QA record in seed.sql, verified by CH-07 (and LIVE-07). No test changes it,
@@ -51,45 +57,55 @@ enum UnclaimedRecord {
 /// On-screen text the tests rely on. Kept in one place so a copy change in the
 /// app only needs one update here.
 enum UIText {
-    // LoginView
+    // LoginView (redesigned in PR #58). The email and password fields are found by
+    // their placeholders; the "Email" and "Password" labels above them are plain text.
     static let appTitle = "Kilala"
-    static let email = "Email"
-    static let password = "Password"
-    static let login = "Login"
-    static let createAccount = "Create new account"
-    static let registerBusinessLink = "Register your Business"
+    static let email = "name@example.com"
+    static let password = "Enter your password"
+    static let login = "Sign In"
+    static let createAccount = "Claim Cardholder ID"
+    static let registerBusinessLink = "Register a Business"
     /// What the MCO4 plan expects for a wrong password (CH-02). The app currently shows
     /// `currentLoginError` for every failure (finding F-03).
     static let wrongPasswordError = "Invalid email or password"
     static let currentLoginError = "Invalid credentials or server offline."
 
     // ContentView / post-login screens
+    /// Heading of the cardholder Home tab (plain text since PR #67, no navigation bar).
     static let cardholderHome = "My Kilala ID"
-    /// Since PR #35 a business lands on the dashboard; the scanner is a drawer at the bottom.
-    static let businessHome = "Business Dashboard"
-    static let scannerDrawerClosed = "Pull Up to Scan QR ID"
-    static let scannerDrawerOpen = "QR Verification Scanner"
-    static let historyButton = "History"
+    /// Since PR #58 the business Home tab has no navigation bar; this heading is only on it.
+    static let businessHome = "NET SALES COLLECTED"
+    /// The floating button on every business tab; it opens the scanner full screen.
+    static let scanQR = "Scan QR"
+    static let closeScanner = "Close"
     static let lguAdminNotice = "Please use the Kilala Web Portal for LGU Admin access."
+    /// Logout button in the LGU admin's navigation bar.
     static let logout = "Logout"
+    /// Log Out button at the bottom of the Profile tab (the only one for cardholders and
+    /// businesses since PRs #58 and #67).
+    static let profileLogOut = "Log Out"
 
     // DigitalIDView
     static let lguBanner = "MAKATI CITY"
     static let statusActive = "Status: ACTIVE"
     static let statusRevoked = "Status: REVOKED"
 
-    // CardholderSignupView
+    // CardholderSignupView (restyled in PR #67). Text fields are found by their placeholders.
     static let cardholderSignupTitle = "Register Account"
+    static let firstNameField = "e.g., Juan"
+    static let middleNameField = "Optional"
+    static let lastNameField = "e.g., Dela Cruz"
+    static let cardNumberField = "MKT-PWD-2026-00001"
     static let verifyRecord = "Verify Record"
     static let cardholderValidation = "Please fill in your first name, last name, and physical card number."
     static let dateOfBirthRequired = "Please select your date of birth."
     static let noMatchingRecord = "No matching LGU record found. Please check your details."
     static let middleNameHint = "If your ID shows a middle name, enter it as well."
-    static let recordFound = "Record found!"
+    static let recordFound = "Record Found!"
     static let proceed = "Proceed"
 
-    // CreateAccountView (since PR #43)
-    static let createAccountSubtitle = "Create your account credentials"
+    // CreateAccountView (since PR #43, restyled in PR #67)
+    static let createAccountSubtitle = "Create Your Account"
     static let sendOTP = "Send OTP to email"
     static let emailMustBeVerified = "Your email must be verified first in order to create your account."
     static let passwordsDoNotMatch = "Passwords do not match."
@@ -103,11 +119,23 @@ enum UIText {
     static let qrShownCaption = "Tap or swipe QR code to hide"
     static let qrRevealHint = "Tap or swipe to show QR code"
 
-    // BusinessSignupView
+    // BusinessSignupView (since PR #64: verify an LGU-accredited record, then create the login).
+    // Text fields are found by their placeholders.
     static let businessSignupTitle = "Register Business"
+    static let verifyYourBusiness = "Verify Your Business"
     static let makatiOption = "Makati City (MKT)"
-    static let invalidEmailHint = "Enter a valid email address, like name@example.com."
-    static let shortPasswordHint = "Password must be at least 8 characters."
+    static let businessNameField = "e.g., Mercury Drug"
+    static let permitField = "MKT-BP-2026-00001"
+    static let tinField = "000-123-456-000"
+    static let verifyBusiness = "Verify Business"
+    static let noMatchingBusiness = "No matching accredited business record found. Please check your details."
+    static let businessAlreadyClaimed = "This business record has already been claimed by an existing account."
+    static let accreditedRecordFound = "Accredited record found"
+    static let addressField = "Street, Barangay, City"
+    static let newPasswordField = "Create a password"
+    static let confirmPasswordField = "Re-enter your password"
+    static let continueToVerification = "Continue to Verification"
+    static let invalidEmailError = "Please enter a valid email address."
 
     // QRScannerView and ScanResultSheet
     static let qrDebugInput = "Paste QR token (e.g. KILALA-QR-...)"
@@ -115,6 +143,10 @@ enum UIText {
     static let verificationResult = "Verification Result"
     static let verified = "VERIFIED"
     static let invalid = "INVALID / REVOKED"
+    /// Since PR #58 an unknown QR code and an expired card have their own status
+    /// instead of INVALID / REVOKED.
+    static let notRecognized = "NOT RECOGNIZED"
+    static let expired = "EXPIRED"
     static let validCard = "Valid Privilege Card"
     static let noMatchingCardholder = "No Matching Cardholder Record"
     static let revokedReason = "Card status is REVOKED"
@@ -125,8 +157,15 @@ enum UIText {
     static let recordTransaction = "Record Transaction"
     static let dismissInvalid = "Dismiss & Scan Again"
     static let transactionRecorded = "Transaction Recorded"
-    static let viewHistory = "View Transaction History"
-    static let transactionHistory = "Transaction History"
+
+    /// The cardholder Home tab masks the name until the QR code is shown (PR #59): every
+    /// word keeps its first letter and the rest becomes "*" (a "." stays), so
+    /// "Juan S. Dela Cruz" is shown as "J*** S. D*** C***".
+    static func maskedName(_ displayName: String) -> String {
+        displayName.split(separator: " ")
+            .map { word in word.prefix(1) + String(word.dropFirst().map { $0 == "." ? "." : "*" }) }
+            .joined(separator: " ")
+    }
 }
 
 extension XCTestCase {
@@ -230,34 +269,48 @@ extension XCTestCase {
             scrollIntoView(element, in: app)
             element.tap()
             let expectation = XCTNSPredicateExpectation(predicate: focused, object: element)
-            if XCTWaiter.wait(for: [expectation], timeout: 2) == .completed { return }
+            if XCTWaiter.wait(for: [expectation], timeout: 2) == .completed {
+                closeStrongPasswordPanelIfShown(app, for: element)
+                return
+            }
             dismissSavePasswordPromptIfShown(app, timeout: 1)
         }
         XCTFail("Could not focus \(element.label.isEmpty ? element.identifier : element.label)", file: file, line: line)
     }
 
-    /// Taps Logout and checks the login screen returns. iOS's "Save Password?" prompt can
-    /// appear a few seconds after login and swallow the tap, so it is dismissed and the
-    /// tap retried.
+    /// Logs out and checks the login screen returns. Cardholders and LGU admins have a
+    /// Logout button in the navigation bar; a business logs out from the bottom of its
+    /// Profile tab (since PR #58). iOS's "Save Password?" prompt can appear a few seconds
+    /// after login and swallow the tap, so it is dismissed and the tap retried.
     @MainActor
     func logOut(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let logout = app.buttons[UIText.logout]
         for _ in 0..<3 {
             dismissSavePasswordPromptIfShown(app, timeout: 1)
-            // On the Business Dashboard an open scanner drawer covers the Logout button.
-            if app.staticTexts[UIText.scannerDrawerOpen].exists { closeScannerDrawer(app) }
-            _ = logout.waitForExistence(timeout: 3)
-            logout.tap()
+            // The full-screen scanner covers the business tabs.
+            if app.navigationBars[UIText.scanQR].exists { closeScanner(app) }
+            let navLogout = app.buttons[UIText.logout]
+            if navLogout.waitForExistence(timeout: 2) {
+                navLogout.tap()
+            } else {
+                app.buttons[UIText.profileTab].tap()
+                let profileLogOut = app.buttons[UIText.profileLogOut]
+                _ = profileLogOut.waitForExistence(timeout: 5)
+                scrollIntoView(profileLogOut, in: app)
+                profileLogOut.tap()
+            }
             if app.buttons[UIText.login].waitForExistence(timeout: 5) { return }
         }
         XCTFail("Logout should return to the login screen", file: file, line: line)
     }
 
     /// Types into a field. Any open keyboard is closed first: an open keyboard can cover
-    /// the next field, and switching fields directly can drop keystrokes.
+    /// the next field, and switching fields directly can drop keystrokes. Business sign-up
+    /// (PR #64) has no way to close the keyboard (Return moves to the next field, and
+    /// dragging the form doesn't close it), so there the tests pass
+    /// `closingKeyboard: false` and tap from field to field, as a user would.
     @MainActor
-    func type(_ text: String, into element: XCUIElement, in app: XCUIApplication) {
-        dismissKeyboard(app)
+    func type(_ text: String, into element: XCUIElement, in app: XCUIApplication, closingKeyboard: Bool = true) {
+        if closingKeyboard { dismissKeyboard(app) }
         focus(element, in: app)
         element.typeText(text)
     }
@@ -302,6 +355,17 @@ extension XCTestCase {
                       "Software keyboard did not close", file: file, line: line)
     }
 
+    /// On an empty new-password field (business sign-up, PR #64) iOS replaces the keyboard
+    /// with a "Use Strong Password?" panel, which swallows typed text. Closing it brings the
+    /// keyboard back, so the test's own password is typed.
+    @MainActor
+    func closeStrongPasswordPanelIfShown(_ app: XCUIApplication, for element: XCUIElement) {
+        guard element.elementType == .secureTextField,
+              app.staticTexts["Use Strong Password?"].waitForExistence(timeout: 1) else { return }
+        app.buttons.matching(NSPredicate(format: "identifier == 'xmark' AND label == 'Close'")).firstMatch.tap()
+        _ = app.keyboards.element.waitForExistence(timeout: 3)
+    }
+
     /// iOS may offer to save the password after a successful login; dismiss it and let
     /// the prompt finish animating away before the next tap.
     @MainActor
@@ -325,13 +389,14 @@ extension XCTestCase {
 
     // MARK: Cardholder sign-up
 
-    /// The four sign-up text fields in screen order. They have no placeholder or
-    /// identifier yet (F-05), so they are found by position.
+    /// The four sign-up text fields, by placeholder (PR #67 gave them placeholders). Return
+    /// moves to the next field and only closes the keyboard on the card number, so fill them
+    /// with `type(_:into:in:closingKeyboard: false)` and close the keyboard after the card number.
     @MainActor
     func signupFields(_ app: XCUIApplication) -> (first: XCUIElement, middle: XCUIElement,
                                                   last: XCUIElement, cardNumber: XCUIElement) {
-        (app.textFields.element(boundBy: 0), app.textFields.element(boundBy: 1),
-         app.textFields.element(boundBy: 2), app.textFields.element(boundBy: 3))
+        (app.textFields[UIText.firstNameField], app.textFields[UIText.middleNameField],
+         app.textFields[UIText.lastNameField], app.textFields[UIText.cardNumberField])
     }
 
     /// Picks a date in the sign-up date-of-birth picker. The compact picker opens a
@@ -385,58 +450,91 @@ extension XCTestCase {
         app.buttons[UIText.verify].tap()
     }
 
-    /// Logs in as the seeded business, waits for the Business Dashboard and opens the
-    /// scanner drawer (tapping its handle), so the Simulator Debug Input is on screen.
+    /// Logs in as the seeded business, waits for the business Home tab and opens the
+    /// scanner, so the Simulator Debug Input is on screen.
     @MainActor
     @discardableResult
     func openMerchantScanner(file: StaticString = #filePath, line: UInt = #line) -> XCUIApplication {
         let app = launchApp()
         logIn(app, email: UITestAccounts.business, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 15),
-                      "Business should land on the Business Dashboard", file: file, line: line)
-        openScannerDrawer(app, file: file, line: line)
+        XCTAssertTrue(app.staticTexts[UIText.businessHome].waitForExistence(timeout: 15),
+                      "Business should land on the business dashboard", file: file, line: line)
+        openScanner(app, file: file, line: line)
         return app
     }
 
-    /// Opens the dashboard's scanner drawer by tapping its handle.
+    /// Opens the scanner with the floating Scan QR button (since PR #58 it opens full
+    /// screen). A tap lost to the late "Save Password?" prompt is retried.
     @MainActor
-    func openScannerDrawer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let handle = app.staticTexts[UIText.scannerDrawerClosed]
-        XCTAssertTrue(handle.waitForExistence(timeout: 10), "Scanner drawer handle missing", file: file, line: line)
-        dismissSavePasswordPromptIfShown(app, timeout: 1)
-        // Tap the handle; if a tap is lost (e.g. while the dashboard is settling),
-        // swipe up instead to guarantee the drawer opens on CI runners.
-        for attempt in 0..<3 {
-            if attempt == 0 { handle.tap() } else { handle.swipeUp() }
-            if app.staticTexts[UIText.scannerDrawerOpen].waitForExistence(timeout: 3) { break }
-            if !handle.exists { break }
+    func openScanner(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let scanButton = app.buttons[UIText.scanQR]
+        XCTAssertTrue(scanButton.waitForExistence(timeout: 10), "Scan QR button missing", file: file, line: line)
+        for _ in 0..<3 {
+            dismissSavePasswordPromptIfShown(app, timeout: 1)
+            scanButton.tap()
+            if app.navigationBars[UIText.scanQR].waitForExistence(timeout: 3) { break }
         }
-        XCTAssertTrue(app.staticTexts[UIText.scannerDrawerOpen].waitForExistence(timeout: 5),
-                      "Scanner drawer did not open", file: file, line: line)
-        // The handle text changes before the slide-up animation ends; wait until the
-        // scanner's input is on screen so the next tap lands where it should.
-        let input = app.textFields[UIText.qrDebugInput]
-        let deadline = Date().addingTimeInterval(5)
-        while !isOnScreen(input, in: app) && Date() < deadline {
-            _ = input.waitForExistence(timeout: 0.5)
+        XCTAssertTrue(app.navigationBars[UIText.scanQR].exists, "Scanner did not open", file: file, line: line)
+        XCTAssertTrue(app.textFields[UIText.qrDebugInput].waitForExistence(timeout: 5),
+                      "Simulator Debug Input missing", file: file, line: line)
+    }
+
+    /// Closes the full-screen scanner, back to the business tab it was opened from.
+    @MainActor
+    func closeScanner(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let scanner = app.navigationBars[UIText.scanQR]
+        XCTAssertTrue(scanner.waitForExistence(timeout: 5), "The scanner is not open", file: file, line: line)
+        scanner.buttons[UIText.closeScanner].tap()
+        XCTAssertTrue(scanner.waitForNonExistence(timeout: 5), "Scanner did not close", file: file, line: line)
+    }
+
+    // MARK: Business sign-up
+
+    /// Opens Register a Business and waits for step 1 (Verify Your Business) with the
+    /// LGU list loaded.
+    @MainActor
+    func openBusinessSignup(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        app.buttons[UIText.registerBusinessLink].tap()
+        XCTAssertTrue(app.staticTexts[UIText.verifyYourBusiness].waitForExistence(timeout: 10),
+                      "Business sign-up step 1 did not open", file: file, line: line)
+        XCTAssertTrue(app.buttons[UIText.verifyBusiness].waitForExistence(timeout: 10), file: file, line: line)
+    }
+
+    /// Picks an Issuing LGU in step 1. The menu preselects the first LGU the backend
+    /// returns (Caloocan once the 17 Metro Manila LGUs are loaded; finding F-17), so the
+    /// test always picks its LGU explicitly.
+    @MainActor
+    func selectLGU(_ app: XCUIApplication, _ option: String = UIText.makatiOption,
+                   file: StaticString = #filePath, line: UInt = #line) {
+        let lguMenu = app.buttons.matching(NSPredicate(format: "label MATCHES %@", ".+ \\([A-Z]+\\)")).firstMatch
+        XCTAssertTrue(lguMenu.waitForExistence(timeout: 10), "Issuing LGU menu missing", file: file, line: line)
+        if lguMenu.label == option { return }
+        lguMenu.tap()
+        let choice = app.buttons[option]
+        XCTAssertTrue(choice.waitForExistence(timeout: 5), "\(option) is not in the LGU menu", file: file, line: line)
+        choice.tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == %@", option)).firstMatch
+                        .waitForExistence(timeout: 5),
+                      "\(option) was not selected", file: file, line: line)
+    }
+
+    /// Fills (or refills) step 1's business name, permit number and TIN after `selectLGU`.
+    /// The keyboard stays open on the TIN field; `submitBusinessVerification` sends it.
+    @MainActor
+    func fillBusinessVerification(_ app: XCUIApplication, name: String, permitNo: String, tin: String) {
+        for (placeholder, value) in [(UIText.businessNameField, name), (UIText.permitField, permitNo),
+                                     (UIText.tinField, tin)] {
+            replaceText(in: app.textFields[placeholder], with: value, app: app)
         }
     }
 
-    /// Closes the scanner drawer by tapping its handle, uncovering the dashboard.
+    /// Submits step 1 with the keyboard's Go key on the TIN field (the same action as
+    /// Verify Business, which the open keyboard can cover). Verifying closes the keyboard.
     @MainActor
-    func closeScannerDrawer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let handle = app.staticTexts[UIText.scannerDrawerOpen]
-        XCTAssertTrue(handle.waitForExistence(timeout: 5), "Scanner drawer is not open", file: file, line: line)
-        // Tap the handle; if a tap is lost (e.g. while the drawer is still settling),
-        // drag the handle down instead, as a user would.
-        for attempt in 0..<3 {
-            if attempt == 0 { handle.tap() } else { handle.swipeDown() }
-            if app.staticTexts[UIText.scannerDrawerClosed].waitForExistence(timeout: 3) { return }
-            if !handle.exists { break }
-        }
-        XCTAssertTrue(app.staticTexts[UIText.scannerDrawerClosed].exists,
-                      "Scanner drawer did not close", file: file, line: line)
+    func submitBusinessVerification(_ app: XCUIApplication) {
+        focus(app.textFields[UIText.tinField], in: app)
+        app.typeText("\n")
     }
 
     // MARK: HTTP
@@ -467,8 +565,8 @@ extension XCTestCase {
     }
 }
 
-/// LGU admin API calls used to set up and restore test data (CH-08, BUS-06 – BUS-08).
-/// Only ever run against the local test backend.
+/// LGU admin API calls used to set up and restore test data (CH-08, BUS-02, BUS-03,
+/// BUS-06 – BUS-08). Only ever run against the local test backend.
 ///
 /// BUS-06 and BUS-07 create their own throwaway card (card number `MKT-PWD-QA-…`) instead of
 /// changing a shared one, so tests running in parallel can't interfere with each other.
@@ -529,6 +627,25 @@ enum LGUAdminAPI {
     static func business(named name: String, token: String) -> [String: Any]? {
         let response = XCTestCase.sendJSON("GET", url("/lgu/businesses"), bearer: token)
         return (response.json as? [[String: Any]])?.first { $0["business_name"] as? String == name }
+    }
+
+    /// POST /api/lgu/businesses (PR #61) – the LGU admin adds an accredited business that
+    /// nobody has claimed yet, in the admin's LGU (Makati). Business sign-up (PR #64) can
+    /// then verify it. Each call makes a new one (`QA Business …`), so parallel tests never
+    /// share it.
+    static func createUnclaimedBusiness(token: String) -> (id: String, name: String, permitNo: String, tin: String)? {
+        let suffix = String(UUID().uuidString.prefix(8)).uppercased()
+        let digits = (0..<9).map { _ in String(Int.random(in: 0...9)) }.joined()
+        let name = "QA Business \(suffix)"
+        let permitNo = "QA-BP-\(suffix)"
+        let tin = "9\(digits.prefix(2))-\(digits.dropFirst(2).prefix(3))-\(digits.suffix(4).prefix(3))-000"
+        let response = XCTestCase.sendJSON("POST", url("/lgu/businesses"), body: [
+            "business_name": name,
+            "business_permit_no": permitNo,
+            "tin_number": tin
+        ], bearer: token)
+        guard response.status == 201, let id = (response.json as? [String: Any])?["id"] as? String else { return nil }
+        return (id, name, permitNo, tin)
     }
 
     /// PATCH /api/lgu/businesses/{id}/accreditation.
