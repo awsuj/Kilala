@@ -229,20 +229,31 @@ final class CardholderAppUITests: XCTestCase {
         let verifyButton = app.buttons[UIText.verifyRecord]
         scrollIntoView(verifyButton, in: app)
         verifyButton.tap()
-        XCTAssertTrue(app.staticTexts[UIText.verifiedAna].waitForExistence(timeout: 10), "Record was not verified")
+        XCTAssertTrue(app.staticTexts[UIText.recordFound].waitForExistence(timeout: 10), "Record was not verified")
+        // The dialog shows the matched name. The backend leaves middle_name out of its
+        // response (F-09), so accept "Ana Santos" as well as "Ana Marie Santos".
+        let matchedName = app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND label ENDSWITH %@",
+            UnclaimedRecord.firstName, UnclaimedRecord.lastName)).firstMatch
+        XCTAssertTrue(matchedName.exists, "The matched cardholder's name should be shown")
+        attachScreenshot(app, named: "CH-07 Record found")
 
-        // Steps 2–3 need the "Create your login" step (email, password, confirm password).
-        let createLoginShown = app.buttons[UIText.createAccountButton].waitForExistence(timeout: 5)
-        knownIssue("F-01", "sign-up stops after Verify Record; there is no create-login step") {
-            XCTAssertTrue(createLoginShown, "The create-login step should appear after verification")
-        }
-        attachScreenshot(app, named: "CH-07 After verification")
-        guard createLoginShown else { return }
+        // Step 2: Proceed opens the create-login step (since PR #43).
+        app.buttons[UIText.proceed].tap()
+        XCTAssertTrue(app.staticTexts[UIText.createAccountSubtitle].waitForExistence(timeout: 5),
+                      "Proceed should open the create-login step")
+        XCTAssertEqual(app.textFields.count, 1, "The create-login step should ask for an email")
+        XCTAssertEqual(app.secureTextFields.count, 2, "The create-login step should ask for a password and its confirmation")
+        XCTAssertTrue(app.buttons[UIText.sendOTP].exists, "The email-code button is missing")
+        let createAccount = app.buttons[UIText.createAccountButton]
+        XCTAssertTrue(createAccount.exists, "The Create Account button is missing")
+        XCTAssertFalse(createAccount.isEnabled, "Create Account must stay disabled until the email is verified")
+        XCTAssertTrue(app.staticTexts[UIText.emailMustBeVerified].exists)
+        attachScreenshot(app, named: "CH-07 Create login")
 
-        // Steps 2–3 are automated once the create-login step exists. PR #43 is building it
-        // with an extra email-code (OTP) step, so its final screens aren't settled yet.
-        // When it lands: gate this test with requireWriteTests() (it claims the record),
-        // check "Passwords do not match.", then that My Kilala ID shows Ana Marie Santos.
+        // Step 3 (email code, "Passwords do not match.", then My Kilala ID for Ana) needs the
+        // emailed 6-digit code, which a UI test can't read, so it is a manual check (TESTING.md §6).
+        // This test claims nothing, so the QA record stays unclaimed.
     }
 
     // MARK: 3. Digital ID

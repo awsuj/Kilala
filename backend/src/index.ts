@@ -515,35 +515,503 @@ app.post('/api/auth/register-business', async (req: Request, res: Response) => {
   }
 });
 
+// 2.4 Change Password (Shared by Cardholder, Business, and LGU Admin)
+app.post(
+  '/api/auth/change-password',
+  authenticateToken,
+  async (req: AuthRequest, res: Response) => {
+    const currentPassword =
+      req.body.current_password !== undefined
+        ? req.body.current_password
+        : req.body.currentPassword;
+    const newPassword =
+      req.body.new_password !== undefined
+        ? req.body.new_password
+        : req.body.newPassword;
+
+    if (
+      typeof currentPassword !== 'string' ||
+      typeof newPassword !== 'string' ||
+      currentPassword.length === 0 ||
+      newPassword.length === 0
+    ) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+
+    const hasMinLength = newPassword.length >= 8;
+    const hasUppercase = /[A-Z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecialChar = /[^A-Za-z0-9]/.test(newPassword);
+
+    if (!hasMinLength || !hasUppercase || !hasNumber || !hasSpecialChar) {
+      return res.status(400).json({
+        error:
+          'Password must be at least 8 characters and contain an uppercase letter, a number, and a special character'
+      });
+    }
+
+    try {
+      const userRes = await pool.query(
+        'SELECT id, password_hash, is_active FROM users WHERE id = $1',
+        [req.user!.id]
+      );
+
+      if (userRes.rows.length === 0) {
+        return res.status(404).json({ error: 'User account not found' });
+      }
+
+      const user = userRes.rows[0];
+      if (!user.is_active) {
+        return res.status(403).json({ error: 'Account is deactivated' });
+      }
+
+      let isCurrentValid = false;
+      if (user.password_hash === '$2b$10$MockHashForTestingOnly123456789012') {
+        isCurrentValid = currentPassword === 'MockHashForTestingOnly123456789012';
+      } else {
+        isCurrentValid = await bcrypt.compare(currentPassword, user.password_hash);
+      }
+
+      if (!isCurrentValid) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+
+      const isSameAsCurrent =
+        currentPassword === newPassword ||
+        (user.password_hash !== '$2b$10$MockHashForTestingOnly123456789012' &&
+          (await bcrypt.compare(newPassword, user.password_hash)));
+
+      if (isSameAsCurrent) {
+        return res.status(400).json({
+          error: 'New password must be different from your current password'
+        });
+      }
+
+      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      await pool.query(
+        'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [newPasswordHash, user.id]
+      );
+
+      res.status(200).json({ message: 'Password updated successfully' });
+    } catch (error) {
+      console.error('Change password error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 // ============================================================================
 // 3. CARDHOLDER ROUTES (iOS - PWD & Senior Citizens)
 // ============================================================================
 
 // 3.1 Get Logged-in Cardholder Profile & QR Token
+const handleGetCardholderProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT cp.*,
+              l.municipality_name AS lgu_name,
+              l.municipality_name AS issuing_lgu,
+              l.lgu_code,
+              cp.issued_date AS issue_date,
+              cp.emergency_contact_phone AS emergency_contact_number,
+              cp.photo_url AS profile_photo_url,
+              u.email
+       FROM cardholder_profiles cp
+       JOIN lgus l ON l.id = cp.lgu_id
+       LEFT JOIN users u ON u.id = cp.user_id
+       WHERE cp.user_id = $1`,
+      [req.user!.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cardholder profile not found' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching cardholder profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 app.get(
   '/api/cardholder/me',
   authenticateToken,
   requireRole(['CARDHOLDER']),
-  async (req: AuthRequest, res: Response) => {
-    try {
-      const result = await pool.query(
-        `SELECT cp.*, l.municipality_name AS lgu_name, l.lgu_code
-         FROM cardholder_profiles cp
-         JOIN lgus l ON l.id = cp.lgu_id
-         WHERE cp.user_id = $1`,
-        [req.user!.id]
+  handleGetCardholderProfile
+);
+
+app.get(
+  '/api/cardholder/profile',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleGetCardholderProfile
+);
+
+// Helper to generate, store, and send a 6-digit verification OTP email
+const issueAndSendEmailOtp = async (normalizedEmail: string) => {
+  await ensureOtpTable();
+
+  const otp = crypto.randomInt(100000, 1000000).toString();
+
+  await pool.query('DELETE FROM otp_verifications WHERE LOWER(email) = $1', [normalizedEmail]);
+
+  await pool.query(
+    `INSERT INTO otp_verifications (email, otp, expires_at, verified)
+     VALUES ($1, $2, NOW() + INTERVAL '10 minutes', FALSE)`,
+    [normalizedEmail, otp]
+  );
+
+  await mailTransporter.sendMail({
+    from: process.env.EMAIL_FROM || emailUser,
+    to: normalizedEmail,
+    subject: 'Your Kilala Verification Code',
+    text: `Your Kilala verification code is: ${otp}\n\nThis code will expire in 10 minutes.`,
+    html: `<div style="font-family: sans-serif; line-height: 1.5;">
+      <h2>Kilala Email Verification</h2>
+      <p>Your 6-digit verification code is:</p>
+      <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">${otp}</p>
+      <p>This code will expire in 10 minutes.</p>
+    </div>`,
+  });
+};
+
+// 3.1.1 Update Logged-in Cardholder Profile (Editable Fields Only)
+const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+
+  // Strictly whitelist editable fields: email, emergency_contact_name, emergency_contact_number.
+  // Silently ignore read-only identity and LGU fields.
+  const rawEmail = req.body.email;
+  const rawEmergencyContactName =
+    req.body.emergency_contact_name !== undefined
+      ? req.body.emergency_contact_name
+      : req.body.emergencyContactName;
+  const rawEmergencyContactNumber =
+    req.body.emergency_contact_number !== undefined
+      ? req.body.emergency_contact_number
+      : req.body.emergency_contact_phone !== undefined
+      ? req.body.emergency_contact_phone
+      : req.body.emergencyContactNumber !== undefined
+      ? req.body.emergencyContactNumber
+      : req.body.emergencyContactPhone;
+
+  const emailValue =
+    rawEmail === undefined
+      ? undefined
+      : typeof rawEmail === 'string'
+      ? rawEmail.trim().toLowerCase()
+      : '';
+
+  if (
+    emailValue !== undefined &&
+    (!emailValue || !emailValue.includes('@') || !emailValue.includes('.'))
+  ) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  const emergencyContactNameValue =
+    rawEmergencyContactName === undefined
+      ? undefined
+      : typeof rawEmergencyContactName === 'string'
+      ? rawEmergencyContactName.trim() || null
+      : null;
+
+  const emergencyContactNumberValue =
+    rawEmergencyContactNumber === undefined
+      ? undefined
+      : typeof rawEmergencyContactNumber === 'string'
+      ? rawEmergencyContactNumber.trim() || null
+      : null;
+
+  const client = await pool.connect();
+  try {
+    await ensureOtpTable();
+    await client.query('BEGIN');
+
+    const profileCheck = await client.query(
+      `SELECT cp.id, u.email AS current_email
+       FROM cardholder_profiles cp
+       LEFT JOIN users u ON u.id = cp.user_id
+       WHERE cp.user_id = $1`,
+      [userId]
+    );
+
+    if (profileCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cardholder profile not found' });
+    }
+
+    const currentEmail = String(profileCheck.rows[0].current_email || '')
+      .trim()
+      .toLowerCase();
+    const isEmailChanged = emailValue !== undefined && emailValue !== currentEmail;
+
+    if (isEmailChanged && emailValue) {
+      const existingUser = await client.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [emailValue, userId]
       );
 
-      if (result.rows.length === 0) {
+      if (existingUser.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+    }
+
+    await client.query(
+      `UPDATE cardholder_profiles
+       SET emergency_contact_name = CASE WHEN $1::boolean THEN $2 ELSE emergency_contact_name END,
+           emergency_contact_phone = CASE WHEN $3::boolean THEN $4 ELSE emergency_contact_phone END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $5`,
+      [
+        emergencyContactNameValue !== undefined,
+        emergencyContactNameValue ?? null,
+        emergencyContactNumberValue !== undefined,
+        emergencyContactNumberValue ?? null,
+        userId
+      ]
+    );
+
+    const updatedResult = await client.query(
+      `SELECT cp.*,
+              l.municipality_name AS lgu_name,
+              l.municipality_name AS issuing_lgu,
+              l.lgu_code,
+              cp.issued_date AS issue_date,
+              cp.emergency_contact_phone AS emergency_contact_number,
+              cp.photo_url AS profile_photo_url,
+              u.email
+       FROM cardholder_profiles cp
+       JOIN lgus l ON l.id = cp.lgu_id
+       LEFT JOIN users u ON u.id = cp.user_id
+       WHERE cp.user_id = $1`,
+      [userId]
+    );
+
+    await client.query('COMMIT');
+
+    if (isEmailChanged && emailValue) {
+      try {
+        await issueAndSendEmailOtp(emailValue);
+      } catch (mailError) {
+        console.error('Error sending email change OTP:', mailError);
+        return res.status(500).json({
+          error:
+            'Failed to send verification code to your new email address. Please check the email and try again.'
+        });
+      }
+
+      return res.status(200).json({
+        ...updatedResult.rows[0],
+        requires_email_verification: true,
+        pending_email: emailValue
+      });
+    }
+
+    res.status(200).json({
+      ...updatedResult.rows[0],
+      requires_email_verification: false,
+      pending_email: null
+    });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Email is already in use by another account' });
+    }
+    console.error('Error updating cardholder profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+};
+
+app.put(
+  '/api/cardholder/profile',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleUpdateCardholderProfile
+);
+
+app.put(
+  '/api/cardholder/me',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleUpdateCardholderProfile
+);
+
+app.patch(
+  '/api/cardholder/profile',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleUpdateCardholderProfile
+);
+
+// 3.1.2 Verify Email Change OTP and Update Cardholder Email
+app.post(
+  '/api/cardholder/verify-email-change',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  async (req: AuthRequest, res: Response) => {
+    const userId = req.user!.id;
+    const rawTargetEmail =
+      req.body.pending_email !== undefined
+        ? req.body.pending_email
+        : req.body.new_email !== undefined
+        ? req.body.new_email
+        : req.body.email;
+    const rawOtp = req.body.otp;
+
+    if (!rawTargetEmail || !rawOtp) {
+      return res.status(400).json({ error: 'New email address and OTP are required' });
+    }
+
+    const normalizedEmail = String(rawTargetEmail).trim().toLowerCase();
+    const trimmedOtp = String(rawOtp).trim();
+
+    if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await ensureOtpTable();
+      await client.query('BEGIN');
+
+      const otpRes = await client.query(
+        `SELECT id FROM otp_verifications
+         WHERE LOWER(email) = $1
+           AND otp = $2
+           AND verified = FALSE
+           AND expires_at > NOW()
+         ORDER BY expires_at DESC
+         LIMIT 1`,
+        [normalizedEmail, trimmedOtp]
+      );
+
+      if (otpRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid or Expired OTP' });
+      }
+
+      const existingUser = await client.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [normalizedEmail, userId]
+      );
+
+      if (existingUser.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+
+      await client.query(
+        'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [normalizedEmail, userId]
+      );
+
+      await client.query(
+        'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+        [normalizedEmail]
+      );
+
+      const updatedResult = await client.query(
+        `SELECT cp.*,
+                l.municipality_name AS lgu_name,
+                l.municipality_name AS issuing_lgu,
+                l.lgu_code,
+                cp.issued_date AS issue_date,
+                cp.emergency_contact_phone AS emergency_contact_number,
+                cp.photo_url AS profile_photo_url,
+                u.email
+         FROM cardholder_profiles cp
+         JOIN lgus l ON l.id = cp.lgu_id
+         LEFT JOIN users u ON u.id = cp.user_id
+         WHERE cp.user_id = $1`,
+        [userId]
+      );
+
+      if (updatedResult.rows.length === 0) {
+        await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Cardholder profile not found' });
       }
 
-      res.status(200).json(result.rows[0]);
-    } catch (error) {
-      console.error('Error fetching cardholder profile:', error);
+      await client.query('COMMIT');
+
+      res.status(200).json({
+        ...updatedResult.rows[0],
+        requires_email_verification: false,
+        pending_email: null
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+      console.error('Verify email change OTP error:', error);
       res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
     }
   }
+);
+
+// 3.1.3 Resend Email Change OTP
+const handleResendEmailChangeOtp = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+  const rawTargetEmail =
+    req.body.pending_email !== undefined
+      ? req.body.pending_email
+      : req.body.new_email !== undefined
+      ? req.body.new_email
+      : req.body.email;
+
+  if (!rawTargetEmail || typeof rawTargetEmail !== 'string' || !rawTargetEmail.trim()) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  const normalizedEmail = rawTargetEmail.trim().toLowerCase();
+  if (!normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+    return res.status(400).json({ error: 'A valid email address is required' });
+  }
+
+  try {
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+      [normalizedEmail, userId]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ error: 'Email is already in use by another account' });
+    }
+
+    await issueAndSendEmailOtp(normalizedEmail);
+
+    res.status(200).json({
+      message: 'OTP sent successfully',
+      pending_email: normalizedEmail
+    });
+  } catch (error) {
+    console.error('Resend email change OTP error:', error);
+    res.status(500).json({
+      error: 'Failed to send verification code. Please check your email address and try again.'
+    });
+  }
+};
+
+app.post(
+  '/api/cardholder/resend-email-change-otp',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleResendEmailChangeOtp
+);
+
+app.post(
+  '/api/cardholder/request-email-change-otp',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleResendEmailChangeOtp
 );
 
 // 3.2 Rotate / Refresh QR Secret Token
@@ -1038,6 +1506,68 @@ app.get(
   authenticateToken,
   requireRole(['BUSINESS']),
   (req: AuthRequest, res: Response) => handleBusinessTransactions(req, res, true)
+);
+
+// 4.6 Get Cardholder Transaction History
+const handleCardholderTransactions = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+
+  try {
+    const result = await pool.query(
+      `SELECT t.id,
+              t.business_id,
+              t.cardholder_id,
+              t.original_amount,
+              t.discounted_amount,
+              t.created_at,
+              bp.business_name,
+              bp.branch_name,
+              bp.category
+       FROM transactions t
+       JOIN cardholder_profiles cp ON cp.id = t.cardholder_id
+       JOIN business_profiles bp ON bp.user_id = t.business_id
+       WHERE cp.user_id = $1
+       ORDER BY t.created_at DESC`,
+      [userId]
+    );
+
+    const transactions = result.rows.map((row) => {
+      const originalAmount = Number(row.original_amount);
+      const discountedAmount = Number(row.discounted_amount);
+      return {
+        id: row.id,
+        business_id: row.business_id,
+        cardholder_id: row.cardholder_id,
+        business_name: row.business_name,
+        branch_name: row.branch_name,
+        category: row.category,
+        business_category: row.category,
+        original_amount: originalAmount,
+        discount_amount: Math.max(0, Number((originalAmount - discountedAmount).toFixed(2))),
+        discounted_amount: discountedAmount,
+        created_at: row.created_at
+      };
+    });
+
+    return res.status(200).json(transactions);
+  } catch (error) {
+    console.error('Error fetching cardholder transactions:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+app.get(
+  '/api/transactions/cardholder',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleCardholderTransactions
+);
+
+app.get(
+  '/api/cardholder/transactions',
+  authenticateToken,
+  requireRole(['CARDHOLDER']),
+  handleCardholderTransactions
 );
 
 

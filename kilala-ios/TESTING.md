@@ -6,7 +6,7 @@
 | **Author** | Edson John Willie (QA / iOS Developer) |
 | **Branch** | `test/app/automation-plan` (Sprint 1 suite: `test/app/sprint-1`, merged in PR #38) |
 | **Targets** | `KilalaTests` (Swift Testing) · `KilalaUITests` (XCTest / XCUIAutomation) |
-| **Last run** | 20 Nov 2026 · Xcode 27.2 · iPhone 17 simulator (iOS 27.2) · see [§7](#7-latest-results) |
+| **Last run** | 22 Nov 2026 · Xcode 27.2 · iPhone 17 simulator (iOS 27.2) · see [§7](#7-latest-results) |
 
 Related QA work: web Playwright tests ([PR #31](https://github.com/awsuj/Kilala/pull/31)) and backend Postman collection ([PR #32](https://github.com/awsuj/Kilala/pull/32)). This suite is the iOS counterpart and uses the same seeded accounts and error messages.
 
@@ -75,6 +75,7 @@ kilala-ios/
     └── KilalaUITests/                       XCTest, drives the app in the simulator
         ├── CardholderAppUITests.swift       CH-01 – CH-08  (MCO4 plan, iOS Cardholder App)
         ├── BusinessAppUITests.swift         BUS-01 – BUS-11 (MCO4 plan, iOS Business App)
+        ├── CardholderDashboardUITests.swift supporting: cardholder dashboard tabs and QR privacy cover (PR #53)
         ├── KilalaUITests.swift              supporting: launch smoke, LGU admin notice, launch performance
         ├── KilalaUITestsLaunchTests.swift   screenshots in light/dark, portrait/landscape
         └── Support/
@@ -191,10 +192,10 @@ These implement the iOS test cases of the **MCO4 Automation Test Plan** one-to-o
 | CH-04 | Logging out or reopening the app requires signing in again | Positive | Live | Logout returns to login; after relaunch the login screen shows (the JWT is kept in memory only) | – |
 | CH-05 | Sign-up requires names, card number and a past date of birth | Negative | – | Empty form → "Please fill in your first name, last name, and physical card number." Plan: date left on today → "Please select your date of birth."; future months disabled | F-06 (date checks) |
 | CH-06 | Sign-up details that match no LGU record are rejected | Negative | Live | Juan's record with a blank middle name → "No matching LGU record found…"; no create-login step. Plan: plus the middle-name hint | F-02 (hint) |
-| CH-07 | Cardholder verifies their LGU record and creates a login | Positive | Live | "Verified: Ana Santos!". Plan: then a create-login step, password mismatch check and the new Digital ID | F-01 (create-login step) |
+| CH-07 | Cardholder verifies their LGU record and creates a login | Positive | Live | "Record found!" with Ana's name; **Proceed** opens the create-login step (email, password, confirm password, "Send OTP to email"), where **Create Account** stays disabled until the email is verified | – |
 | CH-08 | Revoked card shows its status on the Digital ID | Negative | Live, **write** | The LGU admin revokes Maria's card (restored afterwards); her Digital ID shows "Status: REVOKED" | – |
 
-CH-07 stops after the known-issue check: its steps 2–3 are automated once the create-login step exists. PR #43 is building that step with an email-code (OTP) screen, so the final UI isn't settled.
+Since PR #43 the create-login step exists (finding F-01 is addressed), with an email-code (OTP) screen before **Create Account** can be used. The code is emailed, and a UI test can't read it, so CH-07 stops at the create-login screen. The rest of the plan's steps (the email code, "Passwords do not match." and Ana's new Digital ID) are manual check M-19 (§6). CH-07 claims nothing, so it can run again without resetting the QA record.
 
 #### iOS Business App – `BusinessAppUITests.swift`
 
@@ -223,6 +224,18 @@ Every recognised scan adds a verification log, which is why BUS-04 and BUS-09 �
 | `testAppLaunchesToLoginScreen` | – | Foreground, title and Login button visible |
 | `testLGUAdminIsDirectedToWebPortal` | Live | "Please use the Kilala Web Portal for LGU Admin access."; Logout works |
 | `testLaunchPerformance` | – | Records launch time (Xcode template; no pass/fail baseline set) |
+
+#### Cardholder dashboard – `CardholderDashboardUITests.swift` (not in the MCO4 plan)
+
+Since PR #53 a cardholder lands on a dashboard with **Home**, **Transactions** and **Profile** tabs. Home shows the Digital ID with the QR code behind a privacy cover. All three tests log in as Juan and only read data.
+
+| Test | Backend | Expected result |
+|---|---|---|
+| `testDashboardShowsThreeTabsAndOpensOnHome` | Live | Home, Transactions and Profile tabs; Home is selected |
+| `testQRCodeIsHiddenUntilTapped` | Live | "QR code is hidden for your privacy" on arrival; a tap shows the code ("Tap or swipe QR code to hide"); a second tap hides it |
+| `testSwipeShowsQRCodeAndLeavingHomeHidesIt` | Live | A swipe shows the code; after switching to Transactions and back to Home it is hidden again |
+
+The privacy cover is faded out, not removed, so it stays in the accessibility tree; the tests tell shown from hidden by the caption under the code. The Transactions and Profile tabs are empty for now (F-16), so there is nothing more to check on them.
 
 #### Screenshots – `KilalaUITestsLaunchTests.swift`
 
@@ -300,6 +313,10 @@ If a run was interrupted before its teardown, reset the shared QA data with:
 ```sql
 UPDATE cardholder_profiles SET status = 'ACTIVE' WHERE lgu_id_number = 'MKT-OSCA-2026-08912';
 UPDATE business_profiles SET is_accredited = TRUE WHERE business_name = 'Mercury Drug';
+```
+If Ana's QA record was claimed (by manual check M-19 or LIVE-07), CH-07 and LIVE-07 are skipped. Unclaim it by deleting the account that claimed it; the profile's `user_id` is set back to NULL:
+```sql
+DELETE FROM users WHERE id = (SELECT user_id FROM cardholder_profiles WHERE lgu_id_number = 'MKT-PWD-2026-TEST-001');
 ```
 
 ---
@@ -394,7 +411,7 @@ Use these to check by hand what the automated tests cover, for example during Sp
 | M-01 | Launch the app. | Login screen shows "Kilala", Email, Password (dots), Login, Create new account, Register your Business. | `testAppLaunchesToLoginScreen` |
 | M-02 | Leave both fields empty. Type an email only. Then add a password. | Login is greyed out until both fields have text. | CH-03 |
 | M-03 | Log in as `juan.pwd@email.com` with password `wrong`. | Red text "Invalid credentials or server offline."; stays on login. | CH-02 |
-| M-04 | Log in as `juan.pwd@email.com` with the test password. | "My Kilala ID" with Juan's card `MKT-PWD-2026-00481`. Tap **Logout** → back to login. | CH-01, CH-04 |
+| M-04 | Log in as `juan.pwd@email.com` with the test password. | "My Kilala ID" with Juan's card `MKT-PWD-2026-00481` and Home / Transactions / Profile tabs. Tap **Logout** → back to login. | CH-01, CH-04 |
 | M-05 | Log in as `maria.senior@email.com`. | "My Kilala ID" with Maria's senior citizen card. | CH-01 |
 | M-06 | Log in as `cashier@mercury-mkt.com`. | "Business Dashboard" with a "Pull Up to Scan QR ID" drawer at the bottom. Tap **Logout** → back to login. | BUS-01 |
 | M-07 | Log in as `admin@makati.gov.ph`. | Message to use the Kilala Web Portal, and a Logout button. | `testLGUAdminIsDirectedToWebPortal` |
@@ -408,6 +425,8 @@ Use these to check by hand what the automated tests cover, for example during Sp
 | M-15 | Tap **Register your Business**. | Form with Issuing LGU (Makati City (MKT) preselected), business fields, email and password. Register Business is greyed out. | BUS-02 |
 | M-16 | Fill in all fields marked * with new values and tap **Register Business**. *(Creates data – local database only.)* | Signed in on "Business Dashboard". | BUS-03, LIVE-09 |
 | M-17 | Repeat M-16 with the same email or permit number. | Alert "Duplicate Registration – Email or Business Permit No. already exists". | LIVE-09 (API level) |
+| M-18 | Log in as Juan. Tap the QR code, tap it again, swipe it, then switch to **Transactions** and back to **Home**. | The code starts blurred ("QR code is hidden for your privacy"); a tap shows it, the next tap hides it, a swipe shows it, and returning to Home hides it again. | `CardholderDashboardUITests` |
+| M-19 | **Create new account** → PWD → Ana / Marie / Santos, `MKT-PWD-2026-TEST-001`, 17 March 1999 → **Verify Record** → **Proceed**. Enter an email you can read and tap **Send OTP to email**; enter the 6-digit code. Back on the form, enter a valid password and a different confirmation, tap **Create Account**; then fix the confirmation and tap it again. *(Claims the QA record and needs the backend's email settings (F-15) – local database only; reset Ana afterwards with the SQL in §4.3.)* | "Record found!", then the create-login form. After the code, the email shows **Verified** and Create Account is enabled. A mismatch shows "Passwords do not match."; then you land on "My Kilala ID" for Ana. | CH-07 (up to the create-login form) |
 
 To check the API directly, without the app:
 ```sh
@@ -426,6 +445,20 @@ curl -s localhost:5001/api/business/me   -H "Authorization: Bearer <token>"
 All runs used Xcode 27.2, the iPhone 17 simulator (iOS 27.2) and a local backend on a local PostgreSQL database loaded with `schema.sql` + `seed.sql`. For runs A and B, PR #32's unclaimed record (Ana Santos) was also added to the **local** database so that LIVE-07 could run.
 
 > **How results are counted:** the result summary counts each test **function** once. Cases of a parameterized test (for example AUTH-03's four status codes) and the four configurations of each screenshot test are not counted separately. That gives 47 unit tests and 22 UI tests, 69 in total.
+
+**Run F – after PRs #43 (create-login step) and #53 (cardholder dashboard), branch `test/app/signup-dashboard-tests`, everything, write tests on: passed – 72 passed, 4 known issues, 0 failed, 0 skipped (76 tests).** 22 Nov 2026, one test at a time (`-parallel-testing-enabled NO`), about 15 minutes. This run checks CH-07's new create-login flow, the three new cardholder dashboard tests, and the QR helper that now checks the typed token (BUS-05 had once tapped Verify with an empty field). The known issues are CH-02 (F-03), CH-05 (F-06), CH-06 (F-02) and BUS-02 (F-06); CH-07's F-01 check was removed because PR #43 added the step. The test data was cleaned afterwards with the SQL in §4.3.
+```sh
+TEST_RUNNER_KILALA_ALLOW_WRITE_TESTS=1 xcodebuild test -project kilala-ios/Kilala/Kilala.xcodeproj \
+  -scheme Kilala -destination 'platform=iOS Simulator,name=iPhone 17' -parallel-testing-enabled NO
+```
+
+| Group | Passed | Known issue (expected failure) | Failed |
+|---|---|---|---|
+| `KilalaTests` (unit) | 47 | – | 0 |
+| CH-01 – CH-08 | 5 | 3 (CH-02, CH-05, CH-06) | 0 |
+| BUS-01 – BUS-11 | 10 | 1 (BUS-02) | 0 |
+| Cardholder dashboard, supporting UI tests and launch screenshots | 10 | – | 0 |
+| **Total** | **72** | **4** | **0** |
 
 **Run E – after PR #35 (Business Dashboard), branch `fix/app-bus/local-api-url`, everything, write tests on: passed – 68 passed, 5 known issues, 0 failed, 0 skipped.** 20 Nov 2026, Xcode's default parallel testing. This run verifies the Debug `localhost` API URL and the BUS tests' new dashboard and scanner-drawer flow. Earlier attempts on this branch failed for test-side reasons now handled in the helpers: the open scanner drawer covering Logout, a late "Save Password?" prompt clearing the email field during a second login, and a local backend left unresponsive by a branch switch (restart the backend after switching branches).
 
@@ -471,11 +504,11 @@ Took about 7½ minutes, including the launch performance test (average **2.58 s*
 
 ## 8. Findings for the team
 
-These issues came up while designing the tests. **None are fixed in this branch**, because the branch only adds tests. F-01, F-02, F-03 and F-06 are tracked by known-issue checks in the MCO4 tests (CH-07, CH-06, CH-02, CH-05 and BUS-02; see §3.2), which will report when the app is fixed. Priorities use the masterfile definitions: **High** breaks a core feature or exposes user data, **Medium** works but not correctly, **Low** is minor.
+These issues came up while designing and running the tests. **None are fixed by the test branches**, because they only add tests. F-01 was addressed by PR #43. F-02, F-03 and F-06 are tracked by known-issue checks in the MCO4 tests (CH-06, CH-02, CH-05 and BUS-02; see §3.2), which will report when the app is fixed. Priorities use the masterfile definitions: **High** breaks a core feature or exposes user data, **Medium** works but not correctly, **Low** is minor.
 
 | ID | Area | Finding | Suggested priority |
 |---|---|---|---|
-| F-01 | Cardholder sign-up | Sign-up stops after **Verify Record**. The app shows "Verified: …" but never asks for an email or password, and never calls `POST /api/auth/claim-cardholder`. A PWD or senior citizen therefore can't create an account in the app, even though "Login/Signup UI" is ticked in the masterfile. | High – confirm with the PO whether the claim step is planned for a later sprint |
+| F-01 | Cardholder sign-up | **Addressed by PR #43:** after **Record found!** and **Proceed**, a create-login step with an email code (OTP) calls `POST /api/auth/claim-cardholder` (checked by CH-07 and M-19). Original finding: sign-up stops after **Verify Record**. The app shows "Verified: …" but never asks for an email or password, and never calls `POST /api/auth/claim-cardholder`. A PWD or senior citizen therefore can't create an account in the app, even though "Login/Signup UI" is ticked in the masterfile. | High – confirm with the PO whether the claim step is planned for a later sprint |
 | F-02 | Cardholder sign-up | Leaving **Middle Name** empty fails with "No matching LGU record found" whenever the LGU record has a middle name. The backend compares `COALESCE(middle_name,'') ILIKE ''`. Confirmed with Juan's record. The field isn't marked as required. | Medium |
 | F-03 | Login | All failures (wrong password, server down, 500) show the same message, "Invalid credentials or server offline.", because `APIService.login` turns every non-2xx response into the same `URLError`. Users can't tell a typo from an outage. | Low |
 | F-04 | Security | `Info.plist` sets `NSAllowsArbitraryLoads = true`, which allows plain HTTP to **every** server, not just the local backend. `NSAllowsLocalNetworking` is enough for development, and release builds should use HTTPS. APP-02 accepts either setting, so tightening it won't break the test. | Low (hardening) |
@@ -487,6 +520,11 @@ These issues came up while designing the tests. **None are fixed in this branch*
 | F-10 | Repository | The `.gitignore` rule `*.xcodeproj/*` contains a slash, so git applies it only at the repo root, never to `kilala-ios/Kilala/Kilala.xcodeproj`. Personal Xcode files (`xcuserdata/`) aren't ignored; one developer's are already committed. A rule such as `**/*.xcodeproj/xcuserdata/` would fix it. This branch doesn't commit any `xcuserdata`. | Low |
 | F-11 | Backend (for Ops) | `POST /api/auth/login` skips the bcrypt check when a user's stored hash equals the seed placeholder, and accepts the placeholder text itself as the password. All four seeded accounts use it, **including the LGU admin**, and that password is published in `seed.sql`, the masterfile and this document. On any database where `seed.sql` was loaded, such as the shared Supabase database per the masterfile, anyone who reads the repo can sign in as the LGU admin and read cardholder records through `/api/lgu/cardholders`. This is acceptable for throwaway test data only. Remove the shortcut, or limit it to test environments, before any real data is stored. | High (security, backend/Ops) |
 | F-12 | Backend (privacy) | `POST /api/auth/verify-record` passes the name fields to `ILIKE` without escaping. Anyone who knows a card number and date of birth can send `%` as the names and receive the cardholder's first and last name (confirmed on the local database with the PR #32 seed record). The different 404 / 403 / 409 responses also reveal whether a record exists and whether it's claimed or inactive. | Medium (privacy, backend) |
+| F-13 | Backend (security) | `POST /api/auth/claim-cardholder` (PR #43) only checks the email code when the request uses `profile_id`, the app's flow. The older form, `lgu_id_number` + `date_of_birth` (kept for the Postman tests), claims an account **without any email code**, so anyone who knows a card number and date of birth can take over an unclaimed card with an email of their choice. Confirmed on the local database (201). | High (security, backend) |
+| F-14 | Backend (security) | `POST /api/auth/verify-otp` has no attempt limit, so the 6-digit code can be guessed by trying every value within its 10-minute lifetime. | Medium (security, backend) |
+| F-15 | Backend / setup | `POST /api/auth/request-otp` sends the code through the email account in `EMAIL_USER`/`EMAIL_PASS` (or `SMTP_*`). Without them, as in a fresh local setup, **Send OTP to email** shows "Failed to send verification code…" and cardholders can't finish signing up. The code is saved before sending, so a failed send still leaves it in `otp_verifications`. Add the variables to the setup notes and confirm they are set on Render. | Medium |
+| F-16 | Cardholder dashboard | The **Transactions** and **Profile** tabs added in PR #53 are empty screens. | Low – confirm with the PO that they are planned |
+| F-17 | Business sign-up | **Issuing LGU** preselects the first LGU returned by the backend. Once more LGUs exist (PR #44 seeds 17 Metro Manila cities, Caloocan first), a business that doesn't change it registers under the wrong city. Leave it empty until the user picks one. | Medium |
 
 ---
 
@@ -500,7 +538,8 @@ These issues came up while designing the tests. **None are fixed in this branch*
 - `testLaunchPerformance` is the Xcode template's measurement. It has no baseline, so it never fails. Each launch takes about 2.6 s (§7), but the test launches and closes the app several times, so it adds about 40 seconds to a full run.
 - CH-06 and CH-07 set the date of birth through the picker's month and year wheels (`setDateOfBirth`). This relies on the system picker's accessibility labels ("DatePicker.Show", "March 17"), so an iOS update could require changing the helper.
 - iOS's "Save Password?" prompt can appear a few seconds after login and swallow the next tap. `logOut` and `verifyQR` dismiss it and retry; if a UI test fails on a tap right after login, check the failure screenshot for this prompt first.
-- **Known issues** (CH-02, CH-05, CH-06, CH-07, BUS-02) are reported as expected failures until the app is fixed; see §3.2.
+- **Known issues** (CH-02, CH-05, CH-06, BUS-02) are reported as expected failures until the app is fixed; see §3.2.
+- **Email codes (OTP)** are sent by email, which a UI test can't read, so CH-07 stops at the create-login form and the rest of cardholder sign-up is manual check M-19.
 
 ---
 

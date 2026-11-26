@@ -85,9 +85,23 @@ enum UIText {
     static let dateOfBirthRequired = "Please select your date of birth."
     static let noMatchingRecord = "No matching LGU record found. Please check your details."
     static let middleNameHint = "If your ID shows a middle name, enter it as well."
-    static let verifiedAna = "Verified: Ana Santos!"
+    static let recordFound = "Record found!"
+    static let proceed = "Proceed"
+
+    // CreateAccountView (since PR #43)
+    static let createAccountSubtitle = "Create your account credentials"
+    static let sendOTP = "Send OTP to email"
+    static let emailMustBeVerified = "Your email must be verified first in order to create your account."
     static let passwordsDoNotMatch = "Passwords do not match."
     static let createAccountButton = "Create Account"
+
+    // CardholderDashboardView (since PR #53)
+    static let homeTab = "Home"
+    static let transactionsTab = "Transactions"
+    static let profileTab = "Profile"
+    static let qrHiddenCaption = "QR code is hidden for your privacy"
+    static let qrShownCaption = "Tap or swipe QR code to hide"
+    static let qrRevealHint = "Tap or swipe to show QR code"
 
     // BusinessSignupView
     static let businessSignupTitle = "Register Business"
@@ -358,8 +372,16 @@ extension XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 10), "Simulator Debug Input missing", file: file, line: line)
         // iOS's "Save Password?" prompt can appear a few seconds after login and cover the input.
         dismissSavePasswordPromptIfShown(app, timeout: 1)
-        type(token, into: input, in: app)
-        dismissKeyboard(app)
+        // Keystrokes are occasionally lost (BUS-05 once tapped Verify with an empty field,
+        // which does nothing), so check the field holds the token and retype it if not.
+        for _ in 0..<3 {
+            dismissKeyboard(app)
+            replaceText(in: input, with: token, app: app)
+            dismissKeyboard(app)
+            if input.value as? String == token { break }
+            dismissSavePasswordPromptIfShown(app, timeout: 1)
+        }
+        XCTAssertEqual(input.value as? String, token, "The QR token was not entered", file: file, line: line)
         app.buttons[UIText.verify].tap()
     }
 

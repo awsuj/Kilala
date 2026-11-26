@@ -15,7 +15,7 @@
     }
   ],
   "vars": {
-    "API_BASE_URL": "https://kilala.onrender.com",
+    "API_BASE_URL": "https://kilala-vyn1.onrender.com",
     "AUTH_COOKIE": "kilala_token"
   }
 }

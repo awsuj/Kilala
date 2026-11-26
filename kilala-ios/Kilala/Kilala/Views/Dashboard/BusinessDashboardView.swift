@@ -9,8 +9,41 @@ import SwiftUI
 
 struct BusinessDashboardView: View {
     var token: String = APIService.shared.authToken ?? ""
+    var userEmail: String? = APIService.shared.currentUserEmail
     var onLogout: (() -> Void)? = nil
-    
+
+    enum Tab: Hashable, CaseIterable {
+        case home
+        case transactions
+        case profile
+
+        var title: String {
+            switch self {
+            case .home:
+                return "Home"
+            case .transactions:
+                return "Transactions"
+            case .profile:
+                return "Profile"
+            }
+        }
+
+        func iconName(isSelected: Bool) -> String {
+            switch self {
+            case .home:
+                return isSelected ? "house.fill" : "house"
+            case .transactions:
+                return isSelected ? "list.bullet.rectangle.fill" : "list.bullet.rectangle"
+            case .profile:
+                return isSelected ? "person.fill" : "person"
+            }
+        }
+    }
+
+    // MARK: - Navigation & Modal State
+    @State private var selectedTab: Tab = .home
+    @State private var isScannerPresented: Bool = false
+
     // MARK: - Dashboard Analytics State
     @State private var businessProfile: BusinessProfile? = APIService.shared.currentBusinessProfile
     @State private var selectedTimeframe: DashboardTimeframe = .past24Hours
@@ -21,334 +54,133 @@ struct BusinessDashboardView: View {
     @State private var recentTransactions: [TransactionHistoryItem] = []
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
-    
-    // MARK: - Pull-to-Scan Drawer Gesture State
-    @State private var scannerOffset: CGFloat = 0
-    @State private var isScannerOpen: Bool = false
-    
-    private let handleTrayHeight: CGFloat = 82
-    
+
+    private var activeToken: String {
+        token.isEmpty ? (APIService.shared.authToken ?? "") : token
+    }
+
     var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                let drawerHeight = max(geometry.size.height - 24, 480)
-                let closedTravelDistance = max(drawerHeight - handleTrayHeight, 320)
-                let currentDrawerYOffset = closedTravelDistance + scannerOffset
-                let openProgress = min(max(-scannerOffset / closedTravelDistance, 0), 1)
-                
-                ZStack(alignment: .bottom) {
-                    // Base Layer: Business Analytical Dashboard
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 20) {
-                            // Header Subtitle & Timeframe Segmented Picker
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Performance Overview")
-                                    .font(.headline)
-                                    .foregroundColor(.secondary)
-                                
-                                Picker("Timeframe", selection: $selectedTimeframe) {
-                                    Text("Past 24 Hours").tag(DashboardTimeframe.past24Hours)
-                                    Text("Past Week").tag(DashboardTimeframe.pastWeek)
-                                    Text("Past Month").tag(DashboardTimeframe.pastMonth)
+        VStack(spacing: 0) {
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    switch selectedTab {
+                    case .home:
+                        BusinessHomeView(
+                            businessProfile: businessProfile,
+                            selectedTimeframe: $selectedTimeframe,
+                            totalDiscountedAmount: totalDiscountedAmount,
+                            totalDiscountedSales: totalDiscountedSales,
+                            totalOriginalAmount: totalOriginalAmount,
+                            transactionCount: transactionCount,
+                            recentTransactions: recentTransactions,
+                            isLoading: isLoading,
+                            errorMessage: errorMessage,
+                            onSeeAllTransactions: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedTab = .transactions
                                 }
-                                .pickerStyle(.segmented)
-                            }
-                            
-                            if let errorMessage = errorMessage {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
-                                    Text(errorMessage)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    Button("Retry") {
-                                        Task {
-                                            await loadDashboardMetrics(for: selectedTimeframe)
-                                        }
-                                    }
-                                    .font(.caption.weight(.semibold))
-                                }
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color(.secondarySystemGroupedBackground))
-                                )
-                            }
-                            
-                            // Summary Cards (VStack, RoundedRectangle backgrounds, drop shadows)
-                            VStack(spacing: 16) {
-                                SummaryMetricCard(
-                                    title: "Total Discounted Amount",
-                                    subtitle: "Net revenue collected after 20% statutory discount (\(selectedTimeframe.title.lowercased()))",
-                                    amount: totalDiscountedAmount,
-                                    systemImage: "banknote.fill",
-                                    accentColor: .green,
-                                    badgeText: "\(transactionCount) \(transactionCount == 1 ? "tx" : "txs")",
-                                    isLoading: isLoading
-                                )
-                                
-                                SummaryMetricCard(
-                                    title: "Total Discounted Sales",
-                                    subtitle: "Total sales volume minus original amounts (20% discount granted)",
-                                    amount: totalDiscountedSales,
-                                    systemImage: "tag.fill",
-                                    accentColor: .blue,
-                                    badgeText: String(format: "Gross: ₱%.2f", totalOriginalAmount),
-                                    isLoading: isLoading
-                                )
-                            }
-                            
-                            // Recent Transactions & Full History Link
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("Recent Transactions")
-                                        .font(.headline)
-                                    Spacer()
-                                    NavigationLink(destination: BusinessTransactionHistoryView()) {
-                                        HStack(spacing: 4) {
-                                            Text("See All")
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption.weight(.semibold))
-                                        }
-                                        .font(.subheadline.weight(.semibold))
-                                    }
-                                }
-                                
-                                if isLoading && recentTransactions.isEmpty {
-                                    HStack {
-                                        Spacer()
-                                        ProgressView()
-                                            .padding(.vertical, 24)
-                                        Spacer()
-                                    }
-                                } else if recentTransactions.isEmpty {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "receipt")
-                                            .font(.title2)
-                                            .foregroundColor(.secondary)
-                                        Text("No transactions recorded in the \(selectedTimeframe.title.lowercased()).")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                            .multilineTextAlignment(.center)
-                                        Text("Pull up the scanner tray below to verify a Kilala ID.")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 24)
-                                    .padding(.horizontal, 16)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color(.secondarySystemGroupedBackground))
-                                            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
-                                    )
-                                } else {
-                                    VStack(spacing: 10) {
-                                        ForEach(recentTransactions.prefix(5)) { item in
-                                            HStack(spacing: 12) {
-                                                ZStack {
-                                                    Circle()
-                                                        .fill(Color.green.opacity(0.14))
-                                                        .frame(width: 40, height: 40)
-                                                    Image(systemName: "checkmark.seal.fill")
-                                                        .foregroundColor(.green)
-                                                }
-                                                
-                                                VStack(alignment: .leading, spacing: 3) {
-                                                    Text(item.cardholderName)
-                                                        .font(.subheadline.weight(.semibold))
-                                                        .foregroundColor(.primary)
-                                                    Text(formatTransactionDate(item.createdAt))
-                                                        .font(.caption)
-                                                        .foregroundColor(.secondary)
-                                                }
-                                                
-                                                Spacer()
-                                                
-                                                VStack(alignment: .trailing, spacing: 3) {
-                                                    Text(String(format: "₱%.2f", item.discountedAmount))
-                                                        .font(.subheadline.weight(.bold))
-                                                        .foregroundColor(.green)
-                                                    Text(String(format: "Orig: ₱%.2f", item.originalAmount))
-                                                        .font(.caption2)
-                                                        .foregroundColor(.secondary)
-                                                }
-                                            }
-                                            .padding(14)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                    .fill(Color(.secondarySystemGroupedBackground))
-                                                    .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, handleTrayHeight + 36)
-                    }
-                    .background(Color(.systemGroupedBackground).ignoresSafeArea())
-                    .refreshable {
-                        await loadDashboardMetrics(for: selectedTimeframe)
-                    }
-                    
-                    // Dimming Backdrop when Scanner Drawer is pulled out
-                    if openProgress > 0.01 {
-                        Color.black
-                            .opacity(0.45 * openProgress)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                snapScannerDrawer(open: false, closedTravelDistance: closedTravelDistance)
-                            }
-                    }
-                    
-                    // Foreground Pocket / Tray Layer: Pull-to-Scan QRScannerView Drawer
-                    VStack(spacing: 0) {
-                        // Draggable Handle Header
-                        VStack(spacing: 8) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.45))
-                                .frame(width: 44, height: 5)
-                                .padding(.top, 10)
-                            
-                            HStack(spacing: 10) {
-                                Image(systemName: "qrcode.viewfinder")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundColor(.green)
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(isScannerOpen ? "QR Verification Scanner" : "Pull Up to Scan QR ID")
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundColor(.white)
-                                    
-                                    Text(isScannerOpen ? "Drag handle down to return to dashboard" : "Swipe up or tap handle to open camera")
-                                        .font(.caption2)
-                                        .foregroundColor(.white.opacity(0.75))
-                                }
-                                
-                                Spacer()
-                                
-                                Image(systemName: isScannerOpen ? "chevron.down.circle.fill" : "chevron.up.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.white.opacity(0.9))
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 12)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: handleTrayHeight)
-                        .background(
-                            Color(red: 0.08, green: 0.11, blue: 0.16)
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            snapScannerDrawer(open: !isScannerOpen, closedTravelDistance: closedTravelDistance)
-                        }
-                        .gesture(
-                            DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                                .onChanged { value in
-                                    let startingOffset: CGFloat = isScannerOpen ? -closedTravelDistance : 0
-                                    let proposedOffset = startingOffset + value.translation.height
-                                    scannerOffset = min(0, max(-closedTravelDistance, proposedOffset))
-                                }
-                                .onEnded { value in
-                                    let dragThreshold = closedTravelDistance * 0.25
-                                    let shouldOpen: Bool
-                                    if isScannerOpen {
-                                        shouldOpen = !(value.translation.height > dragThreshold || value.predictedEndTranslation.height > dragThreshold * 1.6)
-                                    } else {
-                                        shouldOpen = (value.translation.height < -dragThreshold || value.predictedEndTranslation.height < -dragThreshold * 1.6)
-                                    }
-                                    snapScannerDrawer(open: shouldOpen, closedTravelDistance: closedTravelDistance)
-                                }
-                        )
-                        
-                        // Embedded Camera Viewfinder
-                        QRScannerView(
-                            token: token.isEmpty ? (APIService.shared.authToken ?? "") : token,
-                            onLogout: onLogout,
-                            isEmbeddedInDrawer: true,
-                            isScannerVisible: openProgress > 0.2
-                        ) {
-                            Task {
+                            },
+                            onRefresh: {
                                 await loadDashboardMetrics(for: selectedTimeframe)
                             }
+                        )
+
+                    case .transactions:
+                        NavigationStack {
+                            BusinessTransactionHistoryView(
+                                onLogout: onLogout,
+                                showBrandLogo: true
+                            )
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                    }
-                    .frame(width: geometry.size.width, height: drawerHeight)
-                    .background(Color.black)
-                    .clipShape(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    )
-                    .shadow(color: Color.black.opacity(0.28), radius: 18, x: 0, y: -6)
-                    .offset(y: currentDrawerYOffset)
-                }
-                .ignoresSafeArea(edges: .bottom)
-            }
-            .navigationTitle("Business Dashboard")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    NavigationLink(destination: BusinessTransactionHistoryView()) {
-                        Label("History", systemImage: "clock.arrow.circlepath")
-                    }
-                }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    NavigationLink(
-                        destination: BusinessProfileView(profile: businessProfile) { updated in
-                            businessProfile = updated
+
+                    case .profile:
+                        NavigationStack {
+                            BusinessProfileView(
+                                profile: businessProfile,
+                                userEmail: userEmail,
+                                onLogout: onLogout
+                            ) { updated in
+                                businessProfile = updated
+                            }
                         }
-                    ) {
-                        Label("Profile", systemImage: "gearshape.fill")
-                    }
-                    if let onLogout = onLogout {
-                        Button("Logout", action: onLogout)
                     }
                 }
-            }
-            .onAppear {
-                if !token.isEmpty {
-                    APIService.shared.authToken = token
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Detached 56x56 Floating Scan QR Button (16pt above tab bar, 16pt trailing)
+                Button {
+                    isScannerPresented = true
+                } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color.kilalaGreen)
+                        .clipShape(Circle())
+                        .shadow(color: Color.kilalaInk.opacity(0.18), radius: 10, x: 0, y: 4)
                 }
+                .buttonStyle(TactileScaleButtonStyle())
+                .accessibilityLabel("Scan QR")
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
             }
-            .task {
-                if let fetchedProfile = try? await APIService.shared.fetchBusinessProfile() {
-                    businessProfile = fetchedProfile
-                }
-            }
-            .task(id: selectedTimeframe) {
-                await loadDashboardMetrics(for: selectedTimeframe)
-            }
-            .onChange(of: selectedTimeframe) { _, newTimeframe in
-                Task {
-                    await loadDashboardMetrics(for: newTimeframe)
-                }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Flat, Compact Bottom Tab Bar anchored to bottom safe area
+            BusinessFlatTabBar(selectedTab: $selectedTab)
+        }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .tint(.kilalaGreen)
+        .onAppear {
+            if !token.isEmpty {
+                APIService.shared.authToken = token
             }
         }
+        .task {
+            if let fetchedProfile = try? await APIService.shared.fetchBusinessProfile() {
+                businessProfile = fetchedProfile
+            }
+        }
+        .task(id: selectedTimeframe) {
+            await loadDashboardMetrics(for: selectedTimeframe)
+        }
+        .fullScreenCover(isPresented: $isScannerPresented) {
+            NavigationStack {
+                QRScannerView(
+                    token: activeToken,
+                    onLogout: onLogout,
+                    isEmbeddedInDrawer: true,
+                    isScannerVisible: isScannerPresented
+                ) {
+                    Task {
+                        await loadDashboardMetrics(for: selectedTimeframe)
+                    }
+                }
+                .navigationTitle("Scan QR")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Close") {
+                            isScannerPresented = false
+                        }
+                        .font(.kilala(.subheadline, weight: .semibold))
+                        .foregroundColor(.kilalaInk)
+                    }
+                }
+            }
+            .tint(.kilalaGreen)
+        }
     }
-    
+
     // MARK: - Helpers
-    
-    private func snapScannerDrawer(open: Bool, closedTravelDistance: CGFloat) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-            isScannerOpen = open
-            scannerOffset = open ? -closedTravelDistance : 0
-        }
-    }
-    
+
     private func loadDashboardMetrics(for timeframe: DashboardTimeframe) async {
         if !token.isEmpty {
             APIService.shared.authToken = token
         }
         isLoading = true
         errorMessage = nil
-        
+
         do {
             let summary = try await APIService.shared.fetchBusinessDashboardSummary(range: timeframe.rawValue)
             totalDiscountedAmount = summary.totalDiscountedAmount
@@ -364,94 +196,422 @@ struct BusinessDashboardView: View {
             isLoading = false
         }
     }
-    
-    private func formatTransactionDate(_ isoString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        
-        let fallbackFormatter = ISO8601DateFormatter()
-        fallbackFormatter.formatOptions = [.withInternetDateTime]
-        
-        if let date = isoFormatter.date(from: isoString) ?? fallbackFormatter.date(from: isoString) {
-            let displayFormatter = DateFormatter()
-            displayFormatter.dateStyle = .medium
-            displayFormatter.timeStyle = .short
-            return displayFormatter.string(from: date)
+}
+
+// MARK: - Business Home Tab View
+
+private struct BusinessHomeView: View {
+    let businessProfile: BusinessProfile?
+    @Binding var selectedTimeframe: DashboardTimeframe
+    let totalDiscountedAmount: Double
+    let totalDiscountedSales: Double
+    let totalOriginalAmount: Double
+    let transactionCount: Int
+    let recentTransactions: [TransactionHistoryItem]
+    let isLoading: Bool
+    let errorMessage: String?
+    let onSeeAllTransactions: () -> Void
+    let onRefresh: () async -> Void
+
+    @State private var selectedTransaction: TransactionHistoryItem? = nil
+
+    private var merchantContextText: String {
+        let name = businessProfile?.businessName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lgu = businessProfile?.lguName?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch (name?.isEmpty == false ? name : nil, lgu?.isEmpty == false ? lgu : nil) {
+        case let (business?, municipality?):
+            return "\(business) · \(municipality)"
+        case let (business?, nil):
+            return business
+        case let (nil, municipality?):
+            return municipality
+        default:
+            return "Merchant Account"
         }
-        return isoString
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.kilalaPaper
+                    .ignoresSafeArea()
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Stacked Mobile Editorial Header + Contextual Merchant Line
+                        VStack(alignment: .leading, spacing: 12) {
+                            BusinessPortalHeader(title: "Dashboard")
+
+                            merchantContextLine
+                        }
+
+                        // Compact 36pt Time-Period Selector
+                        TimeframeSegmentedBar(
+                            selectedTimeframe: $selectedTimeframe,
+                            isLoading: isLoading
+                        )
+
+                        if let errorMessage = errorMessage {
+                            errorBanner(message: errorMessage)
+                        }
+
+                        // Single Consolidated Financial Summary Card
+                        financialSummaryCard
+
+                        // Compact Recent Activity Section (Above the Fold)
+                        recentActivitySection
+                            .padding(.top, 8)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 96)
+                }
+                .refreshable {
+                    await onRefresh()
+                }
+            }
+            .navigationTitle("Dashboard")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(item: $selectedTransaction) { item in
+                TransactionDetailSheet(transaction: item)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    // MARK: - Contextual Merchant Line (Inline, Not a Card)
+
+    private var merchantContextLine: some View {
+        let isAccredited = businessProfile?.isAccredited ?? true
+        return HStack(alignment: .center, spacing: 8) {
+            Text(merchantContextText)
+                .font(.kilala(.subheadline, weight: .semibold))
+                .foregroundColor(.kilalaInk)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 4)
+
+            KilalaStatusBadge(
+                icon: isAccredited ? "checkmark.circle.fill" : "xmark.circle.fill",
+                label: isAccredited ? "Accredited" : "Inactive",
+                foreground: isAccredited ? .kilalaStateValid : .kilalaStateInvalid,
+                background: isAccredited
+                    ? Color.kilalaStateValid.opacity(0.12)
+                    : Color.kilalaStateInvalid.opacity(0.12),
+                cornerRadius: 8
+            )
+        }
+    }
+
+    // MARK: - Consolidated Financial Summary Card
+
+    private var financialSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Top Label
+            Text("NET SALES COLLECTED")
+                .font(.kilala(.caption, weight: .bold))
+                .tracking(0.8)
+                .foregroundColor(.kilalaInkSecondary)
+
+            // Hero Figure
+            HStack(alignment: .center, spacing: 8) {
+                Text(String(format: "₱%.2f", totalDiscountedAmount))
+                    .font(.kilala(size: 34, weight: .bold, relativeTo: .largeTitle))
+                    .foregroundColor(.kilalaInk)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                ProgressView()
+                    .tint(.kilalaGreen)
+                    .scaleEffect(0.8)
+                    .opacity(isLoading ? 1 : 0)
+                    .accessibilityHidden(!isLoading)
+            }
+
+            Divider()
+                .overlay(Color.kilalaMintBorder)
+                .padding(.vertical, 2)
+
+            // 2-Column Secondary Breakdown
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Gross Sales")
+                        .font(.kilala(.footnote, weight: .medium))
+                        .foregroundColor(.kilalaInkSecondary)
+
+                    Text(String(format: "₱%.2f", totalOriginalAmount))
+                        .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
+                        .foregroundColor(.kilalaInk)
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle()
+                    .fill(Color.kilalaMintBorder)
+                    .frame(width: 1, height: 40)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Discounts Granted")
+                        .font(.kilala(.footnote, weight: .medium))
+                        .foregroundColor(.kilalaInkSecondary)
+
+                    Text(String(format: "−₱%.2f", totalDiscountedSales))
+                        .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
+                        .foregroundColor(.kilalaGreen)
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+        )
+    }
+
+    // MARK: - Recent Activity Section
+
+    private var groupedRecentTransactions: [TransactionDateGroup] {
+        let sortedNewestFirst = recentTransactions.sorted { lhs, rhs in
+            let leftDate = TransactionDateFormatting.parse(lhs.createdAt) ?? Date.distantPast
+            let rightDate = TransactionDateFormatting.parse(rhs.createdAt) ?? Date.distantPast
+            return leftDate > rightDate
+        }
+        return TransactionDateFormatting.groupByDate(Array(sortedNewestFirst.prefix(5)))
+    }
+
+    private var recentActivitySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                Text("Recent Activity")
+                    .font(.kilala(.headline, weight: .bold))
+                    .foregroundColor(.kilalaInk)
+
+                Spacer()
+
+                Button(action: onSeeAllTransactions) {
+                    HStack(spacing: 4) {
+                        Text("See all")
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .font(.kilala(.subheadline, weight: .bold))
+                    .foregroundColor(.kilalaGreen)
+                    .frame(minHeight: 32)
+                }
+            }
+
+            if isLoading && recentTransactions.isEmpty {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color.kilalaMint)
+                        .frame(height: 1)
+
+                    HStack(spacing: 12) {
+                        ProgressView()
+                            .tint(.kilalaGreen)
+                        Text("Loading recent activity...")
+                            .font(.kilala(.callout))
+                            .foregroundColor(.kilalaInkSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .padding(.horizontal, 16)
+                }
+                .background(Color.kilalaPaper)
+            } else if recentTransactions.isEmpty {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color.kilalaMint)
+                        .frame(height: 1)
+
+                    VStack(spacing: 8) {
+                        Image(systemName: "receipt")
+                            .font(.system(size: 26))
+                            .foregroundColor(.kilalaInkMuted)
+                            .accessibilityHidden(true)
+
+                        Text("No verified discounts in this period")
+                            .font(.kilala(.callout, weight: .bold))
+                            .foregroundColor(.kilalaInk)
+                            .multilineTextAlignment(.center)
+
+                        Text("Tap the Scan QR button to verify a Kilala Digital ID.")
+                            .font(.kilala(.footnote))
+                            .foregroundColor(.kilalaInkSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .padding(.horizontal, 16)
+                }
+                .background(Color.kilalaPaper)
+            } else {
+                ChronologicalTransactionList(groups: groupedRecentTransactions) { item in
+                    selectedTransaction = item
+                }
+            }
+        }
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(message: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.kilalaStateInvalid)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.kilala(.footnote, weight: .semibold))
+                .foregroundColor(.kilalaInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button("Retry") {
+                Task {
+                    await onRefresh()
+                }
+            }
+            .font(.kilala(.footnote, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .background(Color.kilalaGreen)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .padding(12)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.kilalaStateInvalid.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 
-// MARK: - Summary Metric Card Component
+// MARK: - Compact 36pt Time-Period Selector
 
-private struct SummaryMetricCard: View {
-    let title: String
-    let subtitle: String
-    let amount: Double
-    let systemImage: String
-    let accentColor: Color
-    let badgeText: String
+private struct TimeframeSegmentedBar: View {
+    @Binding var selectedTimeframe: DashboardTimeframe
     let isLoading: Bool
-    
+
+    private func shortLabel(for timeframe: DashboardTimeframe) -> String {
+        switch timeframe {
+        case .past24Hours:
+            return "24 Hours"
+        case .pastWeek:
+            return "7 Days"
+        case .pastMonth:
+            return "30 Days"
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(accentColor.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    
-                    Image(systemName: systemImage)
-                        .font(.title3.weight(.semibold))
-                        .foregroundColor(accentColor)
-                }
-                
-                Spacer()
-                
-                Text(badgeText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(accentColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(accentColor.opacity(0.12))
-                    )
-            }
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.secondary)
-                
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(String(format: "₱%.2f", amount))
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                        .contentTransition(.numericText())
-                    
-                    if isLoading {
-                        ProgressView()
-                            .scaleEffect(0.8)
+        HStack(spacing: 4) {
+            ForEach(DashboardTimeframe.allCases) { timeframe in
+                let isSelected = selectedTimeframe == timeframe
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTimeframe = timeframe
                     }
+                } label: {
+                    Text(shortLabel(for: timeframe))
+                        .font(.kilala(.footnote, weight: isSelected ? .bold : .semibold))
+                        .foregroundColor(isSelected ? .white : .kilalaInkSecondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(isSelected ? Color.kilalaGreen : Color.clear)
+                        )
+                        .contentShape(Rectangle())
                 }
-                
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
-        )
+        .padding(3)
+        .frame(height: 36)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(accentColor.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
         )
+    }
+}
+
+// MARK: - Flat, Compact Bottom Tab Bar
+
+private struct BusinessFlatTabBar: View {
+    @Binding var selectedTab: BusinessDashboardView.Tab
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.kilalaBorder)
+                .frame(height: 1)
+
+            HStack(spacing: 0) {
+                ForEach(BusinessDashboardView.Tab.allCases, id: \.self) { tab in
+                    let isSelected = selectedTab == tab
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            selectedTab = tab
+                        }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: tab.iconName(isSelected: isSelected))
+                                .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+
+                            Text(tab.title)
+                                .font(.kilala(size: 11, weight: isSelected ? .bold : .medium, relativeTo: .caption2))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(isSelected ? .kilalaGreen : .kilalaInkSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
+        }
+        .background(
+            Color.white
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+}
+
+private struct TactileScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
