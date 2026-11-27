@@ -199,7 +199,11 @@ struct ScanResultSheet: View {
                                             .font(.kilala(.subheadline, weight: .bold))
                                             .foregroundColor(.kilalaInk)
                                         
-                                        TextField("Total Bill Amount", text: $billAmountText)
+                                        TextField(
+                                            "Total Bill Amount",
+                                            text: $billAmountText,
+                                            prompt: Text("Total Bill Amount").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                        )
                                             .keyboardType(.decimalPad)
                                             .font(.kilala(.title3, weight: .semibold))
                                             .foregroundColor(.kilalaInk)

@@ -766,7 +766,11 @@ struct CardholderProfileView: View {
         VStack(alignment: .leading, spacing: 8) {
             fieldLabel(label)
 
-            TextField(placeholder, text: text)
+            TextField(
+                placeholder,
+                text: text,
+                prompt: Text(placeholder).foregroundStyle(Color.kilalaInk.opacity(0.4))
+            )
                 .font(.kilala(.body))
                 .foregroundColor(.kilalaInk)
                 .tint(.kilalaGreen)

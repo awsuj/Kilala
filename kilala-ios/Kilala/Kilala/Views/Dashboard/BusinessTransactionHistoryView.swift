@@ -172,7 +172,11 @@ struct BusinessTransactionHistoryView: View {
                 .foregroundColor(.kilalaInkSecondary)
                 .accessibilityHidden(true)
 
-            TextField("Search by name or ID number", text: $searchText)
+            TextField(
+                "Search by name or ID number",
+                text: $searchText,
+                prompt: Text("Search by name or ID number").foregroundStyle(Color.kilalaInk.opacity(0.4))
+            )
                 .font(.kilala(.callout))
                 .foregroundColor(.kilalaInk)
                 .tint(.kilalaGreen)

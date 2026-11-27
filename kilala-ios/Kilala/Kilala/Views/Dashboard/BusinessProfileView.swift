@@ -534,10 +534,19 @@ struct BusinessProfileView: View {
 
             Group {
                 if multiline {
-                    TextField(placeholder, text: text, axis: .vertical)
+                    TextField(
+                        placeholder,
+                        text: text,
+                        prompt: Text(placeholder).foregroundStyle(Color.kilalaInk.opacity(0.4)),
+                        axis: .vertical
+                    )
                         .lineLimit(1...4)
                 } else {
-                    TextField(placeholder, text: text)
+                    TextField(
+                        placeholder,
+                        text: text,
+                        prompt: Text(placeholder).foregroundStyle(Color.kilalaInk.opacity(0.4))
+                    )
                 }
             }
             .font(.kilala(.body))

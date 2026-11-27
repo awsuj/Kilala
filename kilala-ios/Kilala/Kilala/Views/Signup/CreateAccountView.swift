@@ -186,11 +186,19 @@ struct CreateAccountView: View {
                                 HStack(spacing: 8) {
                                     Group {
                                         if isPasswordVisible {
-                                            TextField("Create a password", text: $password)
+                                            TextField(
+                                                "Create a password",
+                                                text: $password,
+                                                prompt: Text("Create a password").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                            )
                                                 .textInputAutocapitalization(.never)
                                                 .autocorrectionDisabled()
                                         } else {
-                                            SecureField("Create a password", text: $password)
+                                            SecureField(
+                                                "Create a password",
+                                                text: $password,
+                                                prompt: Text("Create a password").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                            )
                                         }
                                     }
                                     .font(.kilala(.body))
@@ -242,11 +250,19 @@ struct CreateAccountView: View {
                                 HStack(spacing: 8) {
                                     Group {
                                         if isConfirmPasswordVisible {
-                                            TextField("Re-enter your password", text: $confirmPassword)
+                                            TextField(
+                                                "Re-enter your password",
+                                                text: $confirmPassword,
+                                                prompt: Text("Re-enter your password").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                            )
                                                 .textInputAutocapitalization(.never)
                                                 .autocorrectionDisabled()
                                         } else {
-                                            SecureField("Re-enter your password", text: $confirmPassword)
+                                            SecureField(
+                                                "Re-enter your password",
+                                                text: $confirmPassword,
+                                                prompt: Text("Re-enter your password").foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                            )
                                         }
                                     }
                                     .font(.kilala(.body))

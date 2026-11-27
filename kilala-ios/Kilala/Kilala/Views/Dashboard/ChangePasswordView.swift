@@ -330,9 +330,17 @@ struct ChangePasswordView: View {
             HStack(spacing: 8) {
                 Group {
                     if isVisible.wrappedValue {
-                        TextField(placeholder, text: text)
+                        TextField(
+                            placeholder,
+                            text: text,
+                            prompt: Text(placeholder).foregroundStyle(Color.kilalaInk.opacity(0.4))
+                        )
                     } else {
-                        SecureField(placeholder, text: text)
+                        SecureField(
+                            placeholder,
+                            text: text,
+                            prompt: Text(placeholder).foregroundStyle(Color.kilalaInk.opacity(0.4))
+                        )
                     }
                 }
                 .font(.kilala(.body))
