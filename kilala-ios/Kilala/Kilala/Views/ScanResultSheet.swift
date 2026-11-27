@@ -9,7 +9,13 @@ import SwiftUI
 
 struct ScanResultSheet: View {
     let result: VerificationResponse
+    var manualQRToken: Binding<String>? = nil
     let onDismiss: () -> Void
+
+    private func handleDismissAndReset() {
+        manualQRToken?.wrappedValue = ""
+        onDismiss()
+    }
     
     @State private var billAmountText: String = ""
     @State private var isRecordingTransaction: Bool = false
@@ -281,7 +287,7 @@ struct ScanResultSheet: View {
                             )
                         }
                         
-                        Button(action: onDismiss) {
+                        Button(action: handleDismissAndReset) {
                             Text(result.isValid ? "Scan Next Customer" : "Dismiss & Scan Again")
                                 .font(.kilala(.headline, weight: .bold))
                                 .frame(maxWidth: .infinity)
@@ -323,15 +329,15 @@ struct ScanResultSheet: View {
             .toolbarBackground(Color.kilalaPaper, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done", action: onDismiss)
+                    Button("Done", action: handleDismissAndReset)
                         .font(.kilala(.subheadline, weight: .semibold))
                         .foregroundColor(.kilalaGreen)
                         .disabled(isRecordingTransaction)
                 }
             }
             .alert("Transaction Recorded", isPresented: $showConfirmationAlert) {
-                Button("OK") {
-                    onDismiss()
+                Button("Record Next") {
+                    handleDismissAndReset()
                 }
             } message: {
                 Text(
