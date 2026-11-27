@@ -365,6 +365,14 @@ class APIService {
         return registrationResponse
     }
 
+    private static func normalizeCardholderVerificationField(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     func verifyRecord(
         privilegeType: String,
         cardIdNumber: String,
@@ -382,12 +390,12 @@ class APIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let body: [String: String] = [
-            "privilege_type": privilegeType,
-            "card_id_number": cardIdNumber,
-            "first_name": firstName,
-            "middle_name": middleName,
-            "last_name": lastName,
-            "date_of_birth": dateOfBirth
+            "privilege_type": Self.normalizeCardholderVerificationField(privilegeType),
+            "card_id_number": Self.normalizeCardholderVerificationField(cardIdNumber),
+            "first_name": Self.normalizeCardholderVerificationField(firstName),
+            "middle_name": Self.normalizeCardholderVerificationField(middleName),
+            "last_name": Self.normalizeCardholderVerificationField(lastName),
+            "date_of_birth": Self.normalizeCardholderVerificationField(dateOfBirth)
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
