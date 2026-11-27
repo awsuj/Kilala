@@ -303,16 +303,16 @@ private struct BusinessHomeView: View {
     private var financialSummaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Top Label
-            Text("NET SALES COLLECTED")
+            Text("DISCOUNTS GIVEN")
                 .font(.kilala(.caption, weight: .bold))
                 .tracking(0.8)
                 .foregroundColor(.kilalaInkSecondary)
 
             // Hero Figure
             HStack(alignment: .center, spacing: 8) {
-                Text(String(format: "₱%.2f", totalDiscountedAmount))
+                Text(String(format: "₱%.2f", totalDiscountedSales))
                     .font(.kilala(size: 34, weight: .bold, relativeTo: .largeTitle))
-                    .foregroundColor(.kilalaInk)
+                    .foregroundColor(.kilalaGreen)
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -331,11 +331,11 @@ private struct BusinessHomeView: View {
             // 2-Column Secondary Breakdown
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Gross Sales")
+                    Text("Net Sales Collected")
                         .font(.kilala(.footnote, weight: .medium))
                         .foregroundColor(.kilalaInkSecondary)
 
-                    Text(String(format: "₱%.2f", totalOriginalAmount))
+                    Text(String(format: "₱%.2f", totalDiscountedAmount))
                         .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
                         .foregroundColor(.kilalaInk)
                         .contentTransition(.numericText())
@@ -349,13 +349,13 @@ private struct BusinessHomeView: View {
                     .frame(width: 1, height: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Discounts Granted")
+                    Text("Gross Sales")
                         .font(.kilala(.footnote, weight: .medium))
                         .foregroundColor(.kilalaInkSecondary)
 
-                    Text(String(format: "−₱%.2f", totalDiscountedSales))
+                    Text(String(format: "₱%.2f", totalOriginalAmount))
                         .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
-                        .foregroundColor(.kilalaGreen)
+                        .foregroundColor(.kilalaInk)
                         .contentTransition(.numericText())
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
