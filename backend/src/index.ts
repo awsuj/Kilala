@@ -173,23 +173,46 @@ app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
         last_name,
         date_of_birth
     } = req.body;
+
+    const normalizeField = (value: unknown): string =>
+        typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+
+    const normalizedPrivilegeType = normalizeField(privilege_type).toUpperCase();
+    const normalizedCardIdNumber = normalizeField(card_id_number);
+    const normalizedFirstName = normalizeField(first_name);
+    const normalizedMiddleName = normalizeField(middle_name);
+    const normalizedLastName = normalizeField(last_name);
+    const normalizedDateOfBirth = normalizeField(date_of_birth);
     
-    if (!privilege_type || !card_id_number || !first_name || !last_name || !date_of_birth) {
+    if (
+        !normalizedPrivilegeType ||
+        !normalizedCardIdNumber ||
+        !normalizedFirstName ||
+        !normalizedLastName ||
+        !normalizedDateOfBirth
+    ) {
         return res.status(400).json({ error: 'All fields are required for verification' });
     }
     
     try {
-        // Check if a record matches the provided details
+        // Check if a record matches the provided details (trimmed & case-insensitive)
         const profileRes = await pool.query(
-            `SELECT id, user_id, first_name, last_name, status 
+            `SELECT id, user_id, first_name, middle_name, last_name, status 
             FROM cardholder_profiles 
-            WHERE lgu_id_number = $1 
-                AND privilege_type = $2 
+            WHERE LOWER(REGEXP_REPLACE(TRIM(lgu_id_number), '\\s+', ' ', 'g')) = LOWER($1) 
+                AND UPPER(TRIM(privilege_type::text)) = UPPER($2) 
                 AND date_of_birth = $3 
-                AND first_name ILIKE $4 
-                AND last_name ILIKE $5
-                AND COALESCE(middle_name, '') ILIKE $6`,
-            [card_id_number, privilege_type, date_of_birth, first_name, last_name, middle_name || '' ]
+                AND LOWER(REGEXP_REPLACE(TRIM(first_name), '\\s+', ' ', 'g')) = LOWER($4) 
+                AND LOWER(REGEXP_REPLACE(TRIM(last_name), '\\s+', ' ', 'g')) = LOWER($5)
+                AND LOWER(REGEXP_REPLACE(TRIM(COALESCE(middle_name, '')), '\\s+', ' ', 'g')) = LOWER($6)`,
+            [
+                normalizedCardIdNumber,
+                normalizedPrivilegeType,
+                normalizedDateOfBirth,
+                normalizedFirstName,
+                normalizedLastName,
+                normalizedMiddleName
+            ]
         );
         
         if (profileRes.rows.length === 0) {
@@ -208,12 +231,12 @@ app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
             return res.status(409).json({ error: 'This ID has already been claimed by an existing account.' });
         }
         
-        // Success
+        // Success — preserve properly capitalized name from the matched database record
         res.status(200).json({
             message: 'Record verified successfully',
             profile_id: profile.id,
             first_name: profile.first_name,
-            middle_name: profile.middle_name,
+            middle_name: profile.middle_name ?? null,
             last_name: profile.last_name
         });
     } catch (error) {
@@ -927,6 +950,7 @@ const handleGetCardholderProfile = async (req: AuthRequest, res: Response) => {
               l.municipality_name AS issuing_lgu,
               l.lgu_code,
               cp.issued_date AS issue_date,
+              cp.expiry_date AS expiry_date,
               cp.emergency_contact_phone AS emergency_contact_number,
               cp.photo_url AS profile_photo_url,
               u.email
@@ -941,7 +965,11 @@ const handleGetCardholderProfile = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Cardholder profile not found' });
     }
 
-    res.status(200).json(result.rows[0]);
+    const row = result.rows[0];
+    res.status(200).json({
+      ...row,
+      expiry_date: row.expiry_date ?? null
+    });
   } catch (error) {
     console.error('Error fetching cardholder profile:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1094,6 +1122,7 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
               l.municipality_name AS issuing_lgu,
               l.lgu_code,
               cp.issued_date AS issue_date,
+              cp.expiry_date AS expiry_date,
               cp.emergency_contact_phone AS emergency_contact_number,
               cp.photo_url AS profile_photo_url,
               u.email
@@ -1105,6 +1134,8 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
     );
 
     await client.query('COMMIT');
+
+    const updatedRow = updatedResult.rows[0];
 
     if (isEmailChanged && emailValue) {
       try {
@@ -1118,14 +1149,16 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
       }
 
       return res.status(200).json({
-        ...updatedResult.rows[0],
+        ...updatedRow,
+        expiry_date: updatedRow.expiry_date ?? null,
         requires_email_verification: true,
         pending_email: emailValue
       });
     }
 
     res.status(200).json({
-      ...updatedResult.rows[0],
+      ...updatedRow,
+      expiry_date: updatedRow.expiry_date ?? null,
       requires_email_verification: false,
       pending_email: null
     });
@@ -1235,6 +1268,7 @@ app.post(
                 l.municipality_name AS issuing_lgu,
                 l.lgu_code,
                 cp.issued_date AS issue_date,
+                cp.expiry_date AS expiry_date,
                 cp.emergency_contact_phone AS emergency_contact_number,
                 cp.photo_url AS profile_photo_url,
                 u.email
@@ -1252,8 +1286,10 @@ app.post(
 
       await client.query('COMMIT');
 
+      const verifiedRow = updatedResult.rows[0];
       res.status(200).json({
-        ...updatedResult.rows[0],
+        ...verifiedRow,
+        expiry_date: verifiedRow.expiry_date ?? null,
         requires_email_verification: false,
         pending_email: null
       });

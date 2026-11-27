@@ -26,7 +26,7 @@ struct CardholderProfileView: View {
     @State private var disabilityType: String
     @State private var issuingLGU: String
     @State private var issueDate: String
-    @State private var expiryDate: String
+    @State private var expiryDate: String?
     @State private var dateOfBirth: String
     @State private var address: String
 
@@ -54,8 +54,8 @@ struct CardholderProfileView: View {
     @State private var showErrorAlert: Bool = false
     @State private var errorMessage: String = ""
 
-    private static let avatarSize: CGFloat = 88
-    private static let avatarHalfHeight: CGFloat = 44
+    private static let avatarSize: CGFloat = 104
+    private static let avatarHalfHeight: CGFloat = 52
     private static let emptyEmergencyContactText = "No emergency contact set"
 
     // MARK: - Computed Properties
@@ -87,13 +87,18 @@ struct CardholderProfileView: View {
         }
     }
 
+    private var formattedExpiryDate: String {
+        guard let rawExpiry = expiryDate?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawExpiry.isEmpty,
+              rawExpiry.lowercased() != "null" else {
+            return "Lifetime"
+        }
+        return formatDisplayDate(rawExpiry, emptyFallback: "Lifetime")
+    }
+
     private var formattedIssueAndExpiryDate: String {
         let formattedIssue = formatDisplayDate(issueDate, emptyFallback: "—")
-        let trimmedExpiry = expiryDate.trimmingCharacters(in: .whitespacesAndNewlines)
-        let formattedExpiry = trimmedExpiry.isEmpty
-            ? (isPWD ? "—" : "Lifetime")
-            : formatDisplayDate(trimmedExpiry, emptyFallback: "—")
-        return "\(formattedIssue) / \(formattedExpiry)"
+        return "\(formattedIssue) / \(formattedExpiryDate)"
     }
 
     private var formattedEmergencyContactNumberForDisplay: String {
@@ -176,7 +181,7 @@ struct CardholderProfileView: View {
         _disabilityType = State(initialValue: currentProfile?.disabilityType ?? "")
         _issuingLGU = State(initialValue: currentProfile?.resolvedIssuingLGU ?? "")
         _issueDate = State(initialValue: currentProfile?.resolvedIssueDate ?? "")
-        _expiryDate = State(initialValue: currentProfile?.expiryDate ?? "")
+        _expiryDate = State(initialValue: currentProfile?.expiryDate)
         _dateOfBirth = State(initialValue: currentProfile?.dateOfBirth ?? "")
         _address = State(initialValue: currentProfile?.address ?? "")
 
@@ -379,12 +384,12 @@ struct CardholderProfileView: View {
         .background(
             Circle()
                 .fill(Color.white)
-                .frame(width: Self.avatarSize + 6, height: Self.avatarSize + 6)
+                .frame(width: Self.avatarSize + 8, height: Self.avatarSize + 8)
         )
         .overlay(
             Circle()
-                .stroke(Color.kilalaMintBorder, lineWidth: 1.5)
-                .frame(width: Self.avatarSize + 6, height: Self.avatarSize + 6)
+                .stroke(Color.kilalaMintBorder, lineWidth: 2)
+                .frame(width: Self.avatarSize + 8, height: Self.avatarSize + 8)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Cardholder profile photo")
@@ -396,7 +401,7 @@ struct CardholderProfileView: View {
                 .fill(Color.kilalaMint)
 
             Image(systemName: "person.fill")
-                .font(.system(size: 36, weight: .semibold))
+                .font(.system(size: 42, weight: .semibold))
                 .foregroundColor(.kilalaGreen)
         }
     }
@@ -889,7 +894,7 @@ struct CardholderProfileView: View {
         disabilityType = profile.disabilityType ?? ""
         issuingLGU = profile.resolvedIssuingLGU
         issueDate = profile.resolvedIssueDate ?? ""
-        expiryDate = profile.expiryDate ?? ""
+        expiryDate = profile.expiryDate
         dateOfBirth = profile.dateOfBirth
         address = profile.address
 

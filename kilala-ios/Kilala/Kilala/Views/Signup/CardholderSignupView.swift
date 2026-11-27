@@ -50,9 +50,17 @@ struct CardholderSignupView: View {
     }
 
     private var isFormValid: Bool {
-        !firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !cardIdNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !normalizeVerificationField(firstName).isEmpty &&
+        !normalizeVerificationField(lastName).isEmpty &&
+        !normalizeVerificationField(cardIdNumber).isEmpty
+    }
+
+    private func normalizeVerificationField(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     // MARK: - Body
@@ -289,6 +297,7 @@ struct CardholderSignupView: View {
                         Text(
                             [profile.firstName, profile.middleName, profile.lastName]
                                 .compactMap { $0 }
+                                .map { normalizeVerificationField($0) }
                                 .filter { !$0.isEmpty }
                                 .joined(separator: " ")
                         )
@@ -296,7 +305,7 @@ struct CardholderSignupView: View {
                         .foregroundColor(.kilalaInk)
                         .multilineTextAlignment(.center)
 
-                        Text("\(privilegeType.displayName) · \(cardIdNumber.trimmingCharacters(in: .whitespacesAndNewlines))")
+                        Text("\(privilegeType.displayName) · \(normalizeVerificationField(cardIdNumber).uppercased())")
                             .font(.kilalaMono(.callout, weight: .medium))
                             .foregroundColor(.kilalaInkSecondary)
                             .multilineTextAlignment(.center)
@@ -336,9 +345,10 @@ struct CardholderSignupView: View {
                     profileId: profile.profileId,
                     verifiedFullName: [profile.firstName, profile.middleName, profile.lastName]
                         .compactMap { $0 }
+                        .map { normalizeVerificationField($0) }
                         .filter { !$0.isEmpty }
                         .joined(separator: " "),
-                    verifiedCardNumber: cardIdNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+                    verifiedCardNumber: normalizeVerificationField(cardIdNumber).uppercased(),
                     verifiedPrivilegeLabel: privilegeType.displayName,
                     onRegistrationSuccess: onRegistrationSuccess
                 )
@@ -391,10 +401,10 @@ struct CardholderSignupView: View {
         errorMessage = nil
         isVerified = false
 
-        let trimmedFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedMiddle = middleName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedCardId = cardIdNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedFirst = normalizeVerificationField(firstName)
+        let trimmedMiddle = normalizeVerificationField(middleName)
+        let trimmedLast = normalizeVerificationField(lastName)
+        let trimmedCardId = normalizeVerificationField(cardIdNumber)
 
         guard !trimmedFirst.isEmpty, !trimmedLast.isEmpty, !trimmedCardId.isEmpty else {
             errorMessage = "Please fill in your first name, last name, and physical card number."
