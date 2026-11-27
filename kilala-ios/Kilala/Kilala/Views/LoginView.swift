@@ -93,15 +93,25 @@ struct LoginView: View {
                                 HStack(spacing: 8) {
                                     Group {
                                         if isPasswordVisible {
-                                            TextField("Enter your password", text: $password)
-                                                .textInputAutocapitalization(.never)
-                                                .autocorrectionDisabled(true)
+                                            TextField(
+                                                "",
+                                                text: $password,
+                                                prompt: Text(verbatim: "Enter your password")
+                                                    .foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                            )
+                                            .textInputAutocapitalization(.never)
+                                            .autocorrectionDisabled(true)
                                         } else {
-                                            SecureField("Enter your password", text: $password)
+                                            SecureField(
+                                                "",
+                                                text: $password,
+                                                prompt: Text(verbatim: "Enter your password")
+                                                    .foregroundStyle(Color.kilalaInk.opacity(0.4))
+                                            )
                                         }
                                     }
                                     .font(.kilala(.body))
-                                    .foregroundColor(.kilalaInk)
+                                    .foregroundStyle(Color.kilalaInk)
                                     .tint(.kilalaGreen)
                                     .textContentType(.password)
                                     .submitLabel(.go)
@@ -141,6 +151,7 @@ struct LoginView: View {
                                             lineWidth: focusedField == .password ? 1.5 : 1
                                         )
                                 )
+                                .preferredColorScheme(.light)
                             }
 
                             // Inline Error Banner (Icon + Label, never color alone)
