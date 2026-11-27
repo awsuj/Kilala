@@ -67,11 +67,11 @@ class APIService {
     // for TestFlight / App Store) use the deployed backend.
     // IMPORTANT: If running a Debug build on a physical iPhone, change "localhost" to your
     // Mac's IPv4 address (e.g., "192.168.1.15").
-    //#if DEBUG
-    //private let baseURL = "http://localhost:5001/api"
-    //#else
+    #if DEBUG
+    private let baseURL = "http://localhost:5001/api"
+    #else
     private let baseURL = "https://kilala-vyn1.onrender.com/api"
-    //#endif
+    #endif
     var authToken: String?
     var currentUserEmail: String?
     var currentBusinessProfile: BusinessProfile?
