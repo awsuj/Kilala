@@ -5,6 +5,7 @@ struct LoginView: View {
 
     @State private var email = ""
     @State private var password = ""
+    @State private var isPasswordVisible = false
     @State private var errorMessage: String? = nil
     @State private var isLoading = false
 
@@ -89,7 +90,16 @@ struct LoginView: View {
                                     .font(.kilala(.subheadline, weight: .bold))
                                     .foregroundColor(.kilalaInk)
 
-                                SecureField("Enter your password", text: $password)
+                                HStack(spacing: 8) {
+                                    Group {
+                                        if isPasswordVisible {
+                                            TextField("Enter your password", text: $password)
+                                                .textInputAutocapitalization(.never)
+                                                .autocorrectionDisabled(true)
+                                        } else {
+                                            SecureField("Enter your password", text: $password)
+                                        }
+                                    }
                                     .font(.kilala(.body))
                                     .foregroundColor(.kilalaInk)
                                     .tint(.kilalaGreen)
@@ -101,17 +111,36 @@ struct LoginView: View {
                                             performLogin()
                                         }
                                     }
-                                    .padding(.horizontal, 12)
-                                    .frame(minHeight: 48)
-                                    .background(Color.kilalaPaper.opacity(0.6))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(
-                                                focusedField == .password ? Color.kilalaGreen : Color.kilalaBorder,
-                                                lineWidth: focusedField == .password ? 1.5 : 1
-                                            )
-                                    )
+
+                                    Button {
+                                        let wasFocused = (focusedField == .password)
+                                        isPasswordVisible.toggle()
+                                        if wasFocused {
+                                            DispatchQueue.main.async {
+                                                focusedField = .password
+                                            }
+                                        }
+                                    } label: {
+                                        Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.kilalaInkSecondary)
+                                            .frame(width: 28, height: 28)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                                }
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 48)
+                                .background(Color.kilalaPaper.opacity(0.6))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(
+                                            focusedField == .password ? Color.kilalaGreen : Color.kilalaBorder,
+                                            lineWidth: focusedField == .password ? 1.5 : 1
+                                        )
+                                )
                             }
 
                             // Inline Error Banner (Icon + Label, never color alone)

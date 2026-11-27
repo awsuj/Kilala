@@ -31,6 +31,8 @@ struct BusinessSignupView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var isPasswordVisible = false
+    @State private var isConfirmPasswordVisible = false
     @State private var isSendingOTP = false
     @State private var isClaimingAccount = false
     @State private var accountError: String? = nil
@@ -541,7 +543,16 @@ struct BusinessSignupView: View {
                     // Password
                     VStack(alignment: .leading, spacing: 8) {
                         fieldLabel("Password *")
-                        SecureField("Create a password", text: $password)
+                        HStack(spacing: 8) {
+                            Group {
+                                if isPasswordVisible {
+                                    TextField("Create a password", text: $password)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                } else {
+                                    SecureField("Create a password", text: $password)
+                                }
+                            }
                             .font(.kilala(.body))
                             .foregroundColor(.kilalaInk)
                             .tint(.kilalaGreen)
@@ -549,7 +560,26 @@ struct BusinessSignupView: View {
                             .submitLabel(.next)
                             .focused($focusedField, equals: .password)
                             .onSubmit { focusedField = .confirmPassword }
-                            .kilalaInputChrome(isFocused: focusedField == .password)
+
+                            Button {
+                                let wasFocused = (focusedField == .password)
+                                isPasswordVisible.toggle()
+                                if wasFocused {
+                                    DispatchQueue.main.async {
+                                        focusedField = .password
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.kilalaInkSecondary)
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                        }
+                        .kilalaInputChrome(isFocused: focusedField == .password)
 
                         VStack(alignment: .leading, spacing: 4) {
                             passwordRuleRow("At least 8 characters", isMet: hasMinLength)
@@ -563,14 +593,42 @@ struct BusinessSignupView: View {
                     // Confirm Password
                     VStack(alignment: .leading, spacing: 8) {
                         fieldLabel("Confirm Password *")
-                        SecureField("Re-enter your password", text: $confirmPassword)
+                        HStack(spacing: 8) {
+                            Group {
+                                if isConfirmPasswordVisible {
+                                    TextField("Re-enter your password", text: $confirmPassword)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                } else {
+                                    SecureField("Re-enter your password", text: $confirmPassword)
+                                }
+                            }
                             .font(.kilala(.body))
                             .foregroundColor(.kilalaInk)
                             .tint(.kilalaGreen)
                             .textContentType(.newPassword)
                             .submitLabel(.done)
                             .focused($focusedField, equals: .confirmPassword)
-                            .kilalaInputChrome(isFocused: focusedField == .confirmPassword)
+
+                            Button {
+                                let wasFocused = (focusedField == .confirmPassword)
+                                isConfirmPasswordVisible.toggle()
+                                if wasFocused {
+                                    DispatchQueue.main.async {
+                                        focusedField = .confirmPassword
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: isConfirmPasswordVisible ? "eye.slash" : "eye")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.kilalaInkSecondary)
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password")
+                        }
+                        .kilalaInputChrome(isFocused: focusedField == .confirmPassword)
 
                         if !confirmPassword.isEmpty && !passwordsMatch {
                             Text("Passwords do not match.")
