@@ -1523,6 +1523,118 @@ app.put(
   }
 );
 
+// 4.1.2 Request / Resend Email Change OTP for Business Account
+app.post(
+  '/api/business/request-email-change-otp',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  handleResendEmailChangeOtp
+);
+
+app.post(
+  '/api/business/resend-email-change-otp',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  handleResendEmailChangeOtp
+);
+
+// 4.1.3 Verify Email Change OTP and Update Business Account Email
+app.post(
+  '/api/business/verify-email-change',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  async (req: AuthRequest, res: Response) => {
+    const userId = req.user!.id;
+    const rawTargetEmail =
+      req.body.pending_email !== undefined
+        ? req.body.pending_email
+        : req.body.new_email !== undefined
+        ? req.body.new_email
+        : req.body.email;
+    const rawOtp = req.body.otp;
+
+    if (!rawTargetEmail || !rawOtp) {
+      return res.status(400).json({ error: 'New email address and OTP are required' });
+    }
+
+    const normalizedEmail = String(rawTargetEmail).trim().toLowerCase();
+    const trimmedOtp = String(rawOtp).trim();
+
+    if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await ensureOtpTable();
+      await client.query('BEGIN');
+
+      const otpRes = await client.query(
+        `SELECT id FROM otp_verifications
+         WHERE LOWER(email) = $1
+           AND otp = $2
+           AND verified = FALSE
+           AND expires_at > NOW()
+         ORDER BY expires_at DESC
+         LIMIT 1`,
+        [normalizedEmail, trimmedOtp]
+      );
+
+      if (otpRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid or Expired OTP' });
+      }
+
+      const existingUser = await client.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [normalizedEmail, userId]
+      );
+
+      if (existingUser.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+
+      await client.query(
+        'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [normalizedEmail, userId]
+      );
+
+      await client.query(
+        'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+        [normalizedEmail]
+      );
+
+      const updatedResult = await client.query(
+        `SELECT bp.*, l.municipality_name AS lgu_name, u.email
+         FROM business_profiles bp
+         JOIN lgus l ON l.id = bp.lgu_id
+         LEFT JOIN users u ON u.id = bp.user_id
+         WHERE bp.user_id = $1`,
+        [userId]
+      );
+
+      await client.query('COMMIT');
+
+      res.status(200).json({
+        ...(updatedResult.rows[0] || {}),
+        email: normalizedEmail,
+        requires_email_verification: false,
+        pending_email: null
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+      console.error('Verify business email change OTP error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 // 4.2 Scan & Verify Cardholder QR Code
 app.post(
   '/api/verify/scan',
