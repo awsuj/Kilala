@@ -43,67 +43,135 @@ final class BusinessAppUITests: XCTestCase {
     // MARK: 1. Login and registration
 
     /// BUS-01 · Business User Logs In to the Merchant Scanner and Logs Out – Positive
-    /// Since PR #35 the business lands on the Business Dashboard and the Merchant Scanner is
-    /// the drawer at its bottom, so the test opens the drawer to reach the scanner.
+    /// Since PR #58 the business lands on its dashboard (Home tab), opens the Merchant
+    /// Scanner with the floating Scan QR button, and logs out from the Profile tab.
     @MainActor
     func testBUS01_BusinessLogsInToScannerAndLogsOut() throws {
         try requireBackend()
         let app = openMerchantScanner()
         XCTAssertTrue(app.textFields[UIText.qrDebugInput].exists, "The scanner should be ready for a QR code")
-        attachScreenshot(app, named: "BUS-01 Business Dashboard with scanner open")
+        attachScreenshot(app, named: "BUS-01 Merchant Scanner")
+        closeScanner(app)
+        XCTAssertTrue(app.staticTexts[UIText.businessHome].exists, "Closing the scanner should return to the dashboard")
         logOut(app)
     }
 
     /// BUS-02 · Business Registration Requires All Required Fields, a Valid Email, and an
     /// 8-Character Password – Negative
+    /// Since PR #64 a business signs up by verifying a record its LGU already accredited
+    /// (step 1) before creating its login (step 2), so this test also covers the records
+    /// that must be refused.
     @MainActor
     func testBUS02_RegistrationRequiresValidFields() throws {
         try requireBackend()
+        try requireWriteTests()   // step 2 needs an unclaimed business, created by the LGU admin
+
+        let token = try XCTUnwrap(LGUAdminAPI.token(), "LGU admin login failed")
+        let business = try XCTUnwrap(LGUAdminAPI.createUnclaimedBusiness(token: token),
+                                     "Could not create the unclaimed QA business")
         let app = launchApp()
-        app.buttons[UIText.registerBusinessLink].tap()
-        XCTAssertTrue(lguPicker(app).waitForExistence(timeout: 10),
-                      "The LGU list should load and preselect \(UIText.makatiOption)")
+        openBusinessSignup(app)
+        selectLGU(app)
 
-        // Step 1: empty form.
-        XCTAssertFalse(registerButton(app).isEnabled, "Register Business should be disabled on an empty form")
+        // Step 1a: empty form. (The keyboard covers Verify Business while typing, so the
+        // filled form is sent with the keyboard's Go key, which runs the same verification.)
+        let verifyButton = app.buttons[UIText.verifyBusiness]
+        XCTAssertFalse(verifyButton.isEnabled, "Verify Business should be disabled on an empty form")
 
-        // Step 2: every required field, but an invalid email and a short password.
-        fillBusinessForm(app, suffix: "bus02", email: "not-an-email", password: "short")
-        knownIssue("F-06", "business sign-up has no email format check or password rule") {
-            XCTAssertFalse(registerButton(app).isEnabled,
-                           "Register Business should stay disabled with an invalid email or short password")
-            XCTAssertTrue(app.staticTexts[UIText.invalidEmailHint].exists, "Invalid email hint missing")
-            XCTAssertTrue(app.staticTexts[UIText.shortPasswordHint].exists, "Short password hint missing")
-        }
-        attachScreenshot(app, named: "BUS-02 Invalid email and password")
+        // Step 1b: details that match no accredited record.
+        fillBusinessVerification(app, name: business.name, permitNo: business.permitNo, tin: "999-999-999-999")
+        XCTAssertTrue(verifyButton.isEnabled, "Verify Business should be enabled once every field is filled")
+        submitBusinessVerification(app)
+        XCTAssertTrue(app.staticTexts[UIText.noMatchingBusiness].waitForExistence(timeout: 10),
+                      "A wrong TIN should match no record")
 
-        // Step 3: correct the email and password (the form is not submitted).
-        type("@example.test", into: app.textFields["Email Address *"], in: app)
-        type("-password1", into: app.secureTextFields["Password *"], in: app)
+        // Step 1c: a record that is already claimed (Mercury Drug).
+        fillBusinessVerification(app, name: UITestAccounts.businessName,
+                                 permitNo: UITestAccounts.businessPermitNo, tin: UITestAccounts.businessTIN)
+        submitBusinessVerification(app)
+        XCTAssertTrue(app.staticTexts[UIText.businessAlreadyClaimed].waitForExistence(timeout: 10),
+                      "An already-claimed business must be refused")
+        attachScreenshot(app, named: "BUS-02 Already claimed")
+
+        // Step 2: the QA business's record opens the account step.
+        fillBusinessVerification(app, name: business.name, permitNo: business.permitNo, tin: business.tin)
+        submitBusinessVerification(app)
+        XCTAssertTrue(app.staticTexts[UIText.accreditedRecordFound].waitForExistence(timeout: 10),
+                      "The QA business should be verified")
+        let continueButton = app.buttons[UIText.continueToVerification]
+        XCTAssertFalse(continueButton.isEnabled, "Continue should be disabled while the account fields are empty")
+
+        // Step 2a: a short password keeps Continue disabled (rules: 8+ characters,
+        // an uppercase letter, a number and a special character).
+        // The keyboard stays open from field to field; Return on Confirm Password closes it.
+        type("1 QA Street, Makati City", into: app.textFields[UIText.addressField], in: app, closingKeyboard: false)
+        type("not-an-email", into: app.textFields[UIText.email], in: app, closingKeyboard: false)
+        replaceText(in: app.secureTextFields[UIText.newPasswordField], with: "short", app: app)
+        replaceText(in: app.secureTextFields[UIText.confirmPasswordField], with: "short", app: app)
         dismissKeyboard(app)
-        scrollIntoView(registerButton(app), in: app)
-        XCTAssertFalse(app.staticTexts[UIText.invalidEmailHint].exists)
-        XCTAssertFalse(app.staticTexts[UIText.shortPasswordHint].exists)
-        XCTAssertTrue(registerButton(app).isEnabled, "Register Business should be enabled once everything is valid")
+        scrollIntoView(continueButton, in: app)
+        XCTAssertFalse(continueButton.isEnabled, "Continue should stay disabled with a short password")
+        attachScreenshot(app, named: "BUS-02 Short password")
+
+        // Step 2b: a valid password with a different confirmation.
+        replaceText(in: app.secureTextFields[UIText.newPasswordField], with: "QaPassword123!", app: app)
+        replaceText(in: app.secureTextFields[UIText.confirmPasswordField], with: "QaPassword123?", app: app)
+        dismissKeyboard(app)
+        XCTAssertTrue(app.staticTexts[UIText.passwordsDoNotMatch].waitForExistence(timeout: 3),
+                      "A mismatched confirmation should be flagged")
+        XCTAssertFalse(continueButton.isEnabled, "Continue should stay disabled while the passwords differ")
+
+        // Step 2c: matching passwords enable Continue, but the invalid email is refused on tap
+        // (checked in the app before any code is sent).
+        replaceText(in: app.secureTextFields[UIText.confirmPasswordField], with: "QaPassword123!", app: app)
+        dismissKeyboard(app)
+        scrollIntoView(continueButton, in: app)
+        XCTAssertTrue(continueButton.isEnabled, "Continue should be enabled once the passwords match")
+        continueButton.tap()
+        XCTAssertTrue(app.staticTexts[UIText.invalidEmailError].waitForExistence(timeout: 5),
+                      "An invalid email should be refused")
+        attachScreenshot(app, named: "BUS-02 Invalid email")
     }
 
     /// BUS-03 · Register a New Business and Land on the Merchant Scanner – Positive
+    /// Since PR #64 a business claims the record its LGU accredited: step 1 verifies it, step 2
+    /// creates the login, and an emailed code (OTP) finishes sign-up. A UI test can't read the
+    /// email, so this test stops when the account step is ready to send the code; the rest is
+    /// manual check M-20 (TESTING.md §6).
     @MainActor
     func testBUS03_NewBusinessRegistersAndLandsOnScanner() throws {
         try requireBackend()
         try requireWriteTests()
+
+        let token = try XCTUnwrap(LGUAdminAPI.token(), "LGU admin login failed")
+        let business = try XCTUnwrap(LGUAdminAPI.createUnclaimedBusiness(token: token),
+                                     "Could not create the unclaimed QA business")
         let app = launchApp()
-        app.buttons[UIText.registerBusinessLink].tap()
-        XCTAssertTrue(lguPicker(app).waitForExistence(timeout: 10))
+        openBusinessSignup(app)
 
+        // Step 1: verify the LGU's record.
+        selectLGU(app)
+        fillBusinessVerification(app, name: business.name, permitNo: business.permitNo, tin: business.tin)
+        XCTAssertTrue(app.buttons[UIText.verifyBusiness].isEnabled, "Verify Business should be enabled")
+        submitBusinessVerification(app)
+        XCTAssertTrue(app.staticTexts[UIText.accreditedRecordFound].waitForExistence(timeout: 10),
+                      "The accredited record should be found")
+        XCTAssertTrue(app.staticTexts[business.name].exists, "The matched business name should be shown")
+        attachScreenshot(app, named: "BUS-03 Accredited record found")
+
+        // Step 2: account details.
         let suffix = String(UUID().uuidString.prefix(8)).lowercased()
-        fillBusinessForm(app, suffix: suffix)
-        registerButton(app).tap()
-        dismissSavePasswordPromptIfShown(app)
-
-        XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 15),
-                      "A newly registered business should be signed in to the Business Dashboard")
-        attachScreenshot(app, named: "BUS-03 Registered business")
+        type("1 QA Street, Makati City", into: app.textFields[UIText.addressField], in: app, closingKeyboard: false)
+        type("qa.ios.\(suffix)@example.test", into: app.textFields[UIText.email], in: app, closingKeyboard: false)
+        replaceText(in: app.secureTextFields[UIText.newPasswordField], with: "QaPassword123!", app: app)
+        replaceText(in: app.secureTextFields[UIText.confirmPasswordField], with: "QaPassword123!", app: app)
+        dismissKeyboard(app)
+        XCTAssertFalse(app.staticTexts[UIText.passwordsDoNotMatch].exists, "The passwords should match")
+        let continueButton = app.buttons[UIText.continueToVerification]
+        scrollIntoView(continueButton, in: app)
+        XCTAssertTrue(continueButton.isEnabled, "Continue to Verification should be enabled with valid details")
+        attachScreenshot(app, named: "BUS-03 Ready for email verification")
+        // Not tapped: it emails a code a UI test can't read (manual check M-20).
     }
 
     // MARK: 2. QR code verification
@@ -135,7 +203,7 @@ final class BusinessAppUITests: XCTestCase {
         verifyQR(app, token: fakeQR)
 
         XCTAssertTrue(app.staticTexts[UIText.noMatchingCardholder].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts[UIText.invalid].exists)
+        XCTAssertTrue(app.staticTexts[UIText.notRecognized].exists, "The result should say NOT RECOGNIZED")
         XCTAssertFalse(app.buttons[UIText.recordTransaction].exists, "No transaction can be recorded")
         attachScreenshot(app, named: "BUS-05 Unrecognized QR")
 
@@ -185,8 +253,9 @@ final class BusinessAppUITests: XCTestCase {
         verifyQR(app, token: card.qrToken)
 
         XCTAssertTrue(app.staticTexts[UIText.expiredReason].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts[UIText.invalid].exists)
-        XCTAssertTrue(app.staticTexts["EXPIRED"].exists, "Card status should show EXPIRED")
+        // Since PR #58 an expired card has its own status instead of INVALID / REVOKED.
+        XCTAssertTrue(app.staticTexts[UIText.expired].exists, "The result should say EXPIRED")
+        XCTAssertFalse(app.staticTexts[UIText.verified].exists, "An expired card must not show VERIFIED")
         XCTAssertFalse(app.staticTexts[UIText.discountSection].exists, "No discount for an expired card")
         attachScreenshot(app, named: "BUS-07 Expired card")
     }
@@ -283,58 +352,47 @@ final class BusinessAppUITests: XCTestCase {
         let message = "Successfully recorded bill of ₱1234.50 with a 20% discount (Final: ₱987.60)."
         XCTAssertTrue(alert.staticTexts[message].exists, "Unexpected confirmation message")
 
-        // Step 2. Since PR #35 the history is opened from the dashboard's History button,
-        // so the scanner drawer is closed first.
+        // Step 2. Since PR #58 the history is the Transactions tab, under the scanner.
         alert.buttons["OK"].tap()
         XCTAssertTrue(app.navigationBars[UIText.verificationResult].waitForNonExistence(timeout: 5))
-        closeScannerDrawer(app)
-        let historyLink = app.navigationBars[UIText.businessHome].buttons[UIText.historyButton]
-        XCTAssertTrue(historyLink.waitForExistence(timeout: 5), "History button missing")
-        historyLink.tap()
-        XCTAssertTrue(app.navigationBars[UIText.transactionHistory].waitForExistence(timeout: 10))
+        closeScanner(app)
+        app.buttons[UIText.transactionsTab].tap()
 
-        // The history is sorted newest first.
-        let newest = app.cells.firstMatch
+        // The list is sorted newest first. Each row reads "name, time, net, From original".
+        // Earlier runs left rows with the same amounts, so the newest row must also carry
+        // the current time.
+        let newest = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@",
+                                                      UITestAccounts.juanFullName + ", ")).firstMatch
         XCTAssertTrue(newest.waitForExistence(timeout: 10), "The history should list the new transaction")
-        for text in [UITestAccounts.juanFullName, "₱987.60", "Orig: ₱1234.50"] {
-            XCTAssertTrue(newest.staticTexts[text].exists, "\"\(text)\" missing from the newest history row")
-        }
+        XCTAssertTrue(newest.label.hasSuffix(", ₱987.60, From ₱1234.50"), "Unexpected newest row: \(newest.label)")
+        XCTAssertTrue(Self.isRecent(timeIn: newest.label), "The newest row isn't from just now: \(newest.label)")
         attachScreenshot(app, named: "BUS-11 Transaction history")
     }
 
     // MARK: Helpers
 
     @MainActor
-    private func registerButton(_ app: XCUIApplication) -> XCUIElement {
-        // The navigation title and the submit button share the same text; target the button in the form.
-        app.collectionViews.buttons[UIText.businessSignupTitle]
-    }
-
-    @MainActor
-    private func lguPicker(_ app: XCUIApplication) -> XCUIElement {
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", UIText.makatiOption)).firstMatch
-    }
-
-    @MainActor
     private func billField(_ app: XCUIApplication) -> XCUIElement {
         app.textFields[UIText.billAmountField]
     }
 
-    @MainActor
-    private func fillBusinessForm(_ app: XCUIApplication, suffix: String,
-                                  email: String? = nil, password: String = "QaPassword123!") {
-        let values: [(String, String)] = [
-            ("Business Name *", "QA iOS Store \(suffix)"),
-            ("Business Permit No. *", "QA-IOS-\(suffix)"),
-            ("TIN Number *", "000-000-000-000"),
-            ("Business Address *", "1 QA Street, Makati City"),
-            ("Email Address *", email ?? "qa.ios.\(suffix)@example.test")
-        ]
-        for (placeholder, value) in values {
-            type(value, into: app.textFields[placeholder], in: app)
+    /// True when the time in a history row ("name, 5:32 PM, …") is within a few minutes
+    /// of now.
+    private static func isRecent(timeIn rowLabel: String) -> Bool {
+        let parts = rowLabel.components(separatedBy: ", ")
+        guard parts.count > 1 else { return false }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        guard let rowTime = formatter.date(from: parts[1].replacingOccurrences(of: "\u{202F}", with: " ")) else {
+            return false
         }
-        type(password, into: app.secureTextFields["Password *"], in: app)
-        dismissKeyboard(app)
-        scrollIntoView(registerButton(app), in: app)
+        let calendar = Calendar.current
+        let now = calendar.dateComponents([.hour, .minute], from: Date())
+        let row = calendar.dateComponents([.hour, .minute], from: rowTime)
+        let minutesNow = (now.hour ?? 0) * 60 + (now.minute ?? 0)
+        let minutesRow = (row.hour ?? 0) * 60 + (row.minute ?? 0)
+        let difference = abs(minutesNow - minutesRow)
+        return min(difference, 24 * 60 - difference) <= 3
     }
 }

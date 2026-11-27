@@ -41,14 +41,17 @@ final class CardholderAppUITests: XCTestCase {
     // MARK: 1. Login and navigation
 
     /// CH-01 · Cardholder Logs In and Sees Their Digital ID (PWD and Senior Citizen) – Positive
+    /// Since PR #59 the name is masked and the card number blurred until the cardholder taps
+    /// the QR code, so the test checks the masked name first, then shows the code. Since
+    /// PR #67 the name shows the middle name as an initial ("Juan S. Dela Cruz").
     @MainActor
     func testCH01_CardholderLogsInAndSeesDigitalID() throws {
         try requireBackend()
         let cardholders = [
-            (email: UITestAccounts.cardholderPWD, name: UITestAccounts.juanFullName,
-             cardLine: "PWD • \(UITestAccounts.juanCardNumber)"),
-            (email: UITestAccounts.cardholderSenior, name: UITestAccounts.mariaFullName,
-             cardLine: "SENIOR_CITIZEN • \(UITestAccounts.mariaCardNumber)")
+            (email: UITestAccounts.cardholderPWD, name: UITestAccounts.juanDisplayName,
+             privilege: "PWD", cardNumber: UITestAccounts.juanCardNumber),
+            (email: UITestAccounts.cardholderSenior, name: UITestAccounts.mariaDisplayName,
+             privilege: "Senior Citizen", cardNumber: UITestAccounts.mariaCardNumber)
         ]
 
         let app = launchApp()
@@ -56,15 +59,24 @@ final class CardholderAppUITests: XCTestCase {
             logIn(app, email: cardholder.email, password: UITestAccounts.password)
             dismissSavePasswordPromptIfShown(app)
 
-            XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15),
+            XCTAssertTrue(app.staticTexts[UIText.cardholderHome].waitForExistence(timeout: 15),
                           "\(cardholder.email) should land on the Digital ID screen")
-            XCTAssertTrue(app.staticTexts[cardholder.name].waitForExistence(timeout: 10),
-                          "Digital ID details did not load for \(cardholder.email)")
+            XCTAssertTrue(app.staticTexts[UIText.maskedName(cardholder.name)].waitForExistence(timeout: 10),
+                          "Digital ID details did not load (masked name) for \(cardholder.email)")
+            XCTAssertFalse(app.staticTexts[cardholder.name].exists, "The full name should be hidden until the QR code is shown")
             XCTAssertTrue(app.staticTexts[UIText.lguBanner].exists, "LGU name missing")
-            XCTAssertTrue(app.staticTexts[cardholder.cardLine].exists, "Privilege type and card number missing")
+            XCTAssertTrue(app.staticTexts[cardholder.privilege].exists, "Privilege type missing")
+            XCTAssertTrue(app.staticTexts[cardholder.cardNumber].exists, "Card number missing")
             XCTAssertTrue(app.staticTexts[UIText.statusActive].exists, "Card status missing")
             XCTAssertTrue(app.images.firstMatch.exists, "QR code image missing")
-            attachScreenshot(app, named: "CH-01 Digital ID – \(cardholder.email)")
+            attachScreenshot(app, named: "CH-01 Digital ID (hidden) – \(cardholder.email)")
+
+            // Showing the QR code also shows the full name.
+            dismissSavePasswordPromptIfShown(app, timeout: 1)
+            app.staticTexts[UIText.qrRevealHint].tap()
+            XCTAssertTrue(app.staticTexts[cardholder.name].waitForExistence(timeout: 5),
+                          "The full name should appear when the QR code is shown")
+            attachScreenshot(app, named: "CH-01 Digital ID (shown) – \(cardholder.email)")
 
             logOut(app)
         }
@@ -86,7 +98,7 @@ final class CardholderAppUITests: XCTestCase {
             XCTAssertEqual(anyLoginError.label, UIText.wrongPasswordError)
         }
         XCTAssertTrue(app.buttons[UIText.login].exists, "The app should stay on the login screen")
-        XCTAssertFalse(app.navigationBars[UIText.cardholderHome].exists, "A wrong password must not sign in")
+        XCTAssertFalse(app.staticTexts[UIText.cardholderHome].exists, "A wrong password must not sign in")
         attachScreenshot(app, named: "CH-02 Wrong password")
     }
 
@@ -121,20 +133,20 @@ final class CardholderAppUITests: XCTestCase {
         // Steps 1–2: log in, then log out.
         logIn(app, email: UITestAccounts.cardholderPWD, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[UIText.cardholderHome].waitForExistence(timeout: 15))
         logOut(app)
 
         // Step 3: log in again, close the app and reopen it.
         logIn(app, email: UITestAccounts.cardholderPWD, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[UIText.cardholderHome].waitForExistence(timeout: 15))
         app.terminate()
         _ = app.wait(for: .notRunning, timeout: 5)
         app.launch()
 
         XCTAssertTrue(app.buttons[UIText.login].waitForExistence(timeout: 10),
                       "A reopened app should start on the login screen (the JWT is kept in memory only)")
-        XCTAssertFalse(app.navigationBars[UIText.cardholderHome].exists)
+        XCTAssertFalse(app.staticTexts[UIText.cardholderHome].exists)
     }
 
     // MARK: 2. Cardholder sign-up
@@ -154,9 +166,9 @@ final class CardholderAppUITests: XCTestCase {
 
         // Step 2: names and card number, date of birth left on today.
         let fields = signupFields(app)
-        type("Juan", into: fields.first, in: app)
-        type("Dela Cruz", into: fields.last, in: app)
-        type(UITestAccounts.juanCardNumber, into: fields.cardNumber, in: app)
+        type("Juan", into: fields.first, in: app, closingKeyboard: false)
+        type("Dela Cruz", into: fields.last, in: app, closingKeyboard: false)
+        type(UITestAccounts.juanCardNumber, into: fields.cardNumber, in: app, closingKeyboard: false)
         dismissKeyboard(app)
         scrollIntoView(verifyButton, in: app)
         verifyButton.tap()
@@ -187,9 +199,9 @@ final class CardholderAppUITests: XCTestCase {
 
         // Step 1: Juan's record, but with the middle name left blank.
         let fields = signupFields(app)
-        type("Juan", into: fields.first, in: app)
-        type("Dela Cruz", into: fields.last, in: app)
-        type(UITestAccounts.juanCardNumber, into: fields.cardNumber, in: app)
+        type("Juan", into: fields.first, in: app, closingKeyboard: false)
+        type("Dela Cruz", into: fields.last, in: app, closingKeyboard: false)
+        type(UITestAccounts.juanCardNumber, into: fields.cardNumber, in: app, closingKeyboard: false)
         dismissKeyboard(app)
         setDateOfBirth(app, month: "May", year: 1998, day: 14)
 
@@ -219,10 +231,10 @@ final class CardholderAppUITests: XCTestCase {
 
         // Step 1: verify the unclaimed QA record.
         let fields = signupFields(app)
-        type(UnclaimedRecord.firstName, into: fields.first, in: app)
-        type(UnclaimedRecord.middleName, into: fields.middle, in: app)
-        type(UnclaimedRecord.lastName, into: fields.last, in: app)
-        type(UnclaimedRecord.cardNumber, into: fields.cardNumber, in: app)
+        type(UnclaimedRecord.firstName, into: fields.first, in: app, closingKeyboard: false)
+        type(UnclaimedRecord.middleName, into: fields.middle, in: app, closingKeyboard: false)
+        type(UnclaimedRecord.lastName, into: fields.last, in: app, closingKeyboard: false)
+        type(UnclaimedRecord.cardNumber, into: fields.cardNumber, in: app, closingKeyboard: false)
         dismissKeyboard(app)
         setDateOfBirth(app, month: UnclaimedRecord.birthMonth, year: UnclaimedRecord.birthYear,
                        day: UnclaimedRecord.birthDay)
@@ -279,7 +291,7 @@ final class CardholderAppUITests: XCTestCase {
         let app = launchApp()
         logIn(app, email: UITestAccounts.cardholderSenior, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[UIText.cardholderHome].waitForExistence(timeout: 15))
 
         XCTAssertTrue(app.staticTexts[UIText.statusRevoked].waitForExistence(timeout: 10),
                       "The Digital ID should show the revoked status")
