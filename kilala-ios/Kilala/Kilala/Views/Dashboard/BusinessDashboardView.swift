@@ -96,6 +96,7 @@ struct BusinessDashboardView: View {
                     case .profile:
                         NavigationStack {
                             BusinessProfileView(
+                                token: activeToken,
                                 profile: businessProfile,
                                 userEmail: userEmail,
                                 onLogout: onLogout
@@ -145,27 +146,17 @@ struct BusinessDashboardView: View {
             await loadDashboardMetrics(for: selectedTimeframe)
         }
         .fullScreenCover(isPresented: $isScannerPresented) {
-            NavigationStack {
-                QRScannerView(
-                    token: activeToken,
-                    onLogout: onLogout,
-                    isEmbeddedInDrawer: true,
-                    isScannerVisible: isScannerPresented
-                ) {
-                    Task {
-                        await loadDashboardMetrics(for: selectedTimeframe)
-                    }
+            QRScannerView(
+                token: activeToken,
+                onLogout: onLogout,
+                isEmbeddedInDrawer: true,
+                isScannerVisible: isScannerPresented,
+                onClose: {
+                    isScannerPresented = false
                 }
-                .navigationTitle("Scan QR")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Close") {
-                            isScannerPresented = false
-                        }
-                        .font(.kilala(.subheadline, weight: .semibold))
-                        .foregroundColor(.kilalaInk)
-                    }
+            ) {
+                Task {
+                    await loadDashboardMetrics(for: selectedTimeframe)
                 }
             }
             .tint(.kilalaGreen)
@@ -384,13 +375,13 @@ private struct BusinessHomeView: View {
 
     // MARK: - Recent Activity Section
 
-    private var groupedRecentTransactions: [TransactionDateGroup] {
+    private var sortedRecentTransactions: [TransactionHistoryItem] {
         let sortedNewestFirst = recentTransactions.sorted { lhs, rhs in
             let leftDate = TransactionDateFormatting.parse(lhs.createdAt) ?? Date.distantPast
             let rightDate = TransactionDateFormatting.parse(rhs.createdAt) ?? Date.distantPast
             return leftDate > rightDate
         }
-        return TransactionDateFormatting.groupByDate(Array(sortedNewestFirst.prefix(5)))
+        return Array(sortedNewestFirst.prefix(5))
     }
 
     private var recentActivitySection: some View {
@@ -461,9 +452,36 @@ private struct BusinessHomeView: View {
                 }
                 .background(Color.kilalaPaper)
             } else {
-                ChronologicalTransactionList(groups: groupedRecentTransactions) { item in
-                    selectedTransaction = item
+                VStack(spacing: 0) {
+                    ForEach(Array(sortedRecentTransactions.enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            selectedTransaction = item
+                        } label: {
+                            TransactionHistoryRow(
+                                item: item,
+                                showCardNumber: false,
+                                showTimeOnly: false,
+                                showDateAndTime: true,
+                                horizontalPadding: 16
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < sortedRecentTransactions.count - 1 {
+                            Rectangle()
+                                .fill(Color.kilalaMintBorder)
+                                .frame(height: 1)
+                                .padding(.leading, 16)
+                        }
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                )
             }
         }
     }

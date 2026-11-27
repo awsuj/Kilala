@@ -510,10 +510,14 @@ struct TransactionHistoryRow: View {
     let item: TransactionHistoryItem
     var showCardNumber: Bool = false
     var showTimeOnly: Bool = true
+    var showDateAndTime: Bool = false
     var horizontalPadding: CGFloat = 16
 
     private var formattedTimestamp: String {
-        showTimeOnly
+        if showDateAndTime {
+            return TransactionDateFormatting.formatDateAndTime(item.createdAt)
+        }
+        return showTimeOnly
             ? TransactionDateFormatting.formatTimeOnly(item.createdAt)
             : TransactionDateFormatting.formatCompact(item.createdAt)
     }
@@ -581,21 +585,6 @@ struct TransactionDetailSheet: View {
     let transaction: TransactionHistoryItem
     @Environment(\.dismiss) private var dismiss
 
-    private var verificationStatus: (label: String, icon: String, fill: Color, foreground: Color) {
-        guard let rawStatus = transaction.status?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawStatus.isEmpty else {
-            return ("Verified", "checkmark.seal.fill", Color.kilalaStateValid.opacity(0.12), .kilalaStateValid)
-        }
-        let upper = rawStatus.uppercased()
-        if upper == "ACTIVE" || upper == "VERIFIED" {
-            return ("Verified", "checkmark.seal.fill", Color.kilalaStateValid.opacity(0.12), .kilalaStateValid)
-        }
-        if upper == "EXPIRED" {
-            return ("Expired", "clock.badge.exclamationmark.fill", .kilalaStateExpired, .kilalaInk)
-        }
-        return (rawStatus.capitalized, "xmark.octagon.fill", Color.kilalaStateInvalid.opacity(0.12), .kilalaStateInvalid)
-    }
-
     private var classificationBadge: (icon: String, fill: Color, foreground: Color) {
         switch transaction.privilegeType?.uppercased() {
         case "PWD":
@@ -616,19 +605,6 @@ struct TransactionDetailSheet: View {
                 ScrollView(showsIndicators: false) {
                     // Single Flat White 16pt Audit Card (No Nested Cards)
                     VStack(alignment: .leading, spacing: 16) {
-                        // Verification Status Header (Icon + Word + Brand State Color)
-                        HStack {
-                            KilalaStatusBadge(
-                                icon: verificationStatus.icon,
-                                label: verificationStatus.label,
-                                foreground: verificationStatus.foreground,
-                                background: verificationStatus.fill,
-                                cornerRadius: 8
-                            )
-
-                            Spacer()
-                        }
-
                         // Cardholder Identity
                         VStack(alignment: .leading, spacing: 4) {
                             Text("CARDHOLDER")
@@ -1080,6 +1056,13 @@ enum TransactionDateFormatting {
                     items: sortedItems
                 )
             }
+    }
+
+    static func formatDateAndTime(_ isoString: String) -> String {
+        guard let date = parse(isoString) else { return isoString }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy · h:mm a"
+        return formatter.string(from: date)
     }
 
     static func formatCompact(_ isoString: String) -> String {
