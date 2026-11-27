@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Bell } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -84,14 +83,6 @@ export default function TopBar({ role, lgus = [], selectedCity }: Props) {
             </SelectContent>
           </Select>
         )}
-
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-hairline bg-white text-slate-ink transition-colors hover:bg-surface"
-        >
-          <Bell className="h-5 w-5" aria-hidden="true" />
-        </button>
       </div>
     </header>
   );

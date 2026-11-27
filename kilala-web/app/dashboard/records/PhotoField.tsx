@@ -1,7 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ImagePlus, Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+// Accepted image types and max size, enforced before upload.
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ACCEPT_ATTR = ACCEPTED_TYPES.join(",");
+const MAX_FILE_MB = 8;
+const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+
+// Returns an error message if the file isn't an allowed image within size, else null.
+function validateFile(file: File): string | null {
+  if (!ACCEPTED_TYPES.includes(file.type))
+    return "Use a JPG, PNG, or WebP image.";
+  if (file.size > MAX_FILE_BYTES)
+    return `Image must be ${MAX_FILE_MB} MB or smaller.`;
+  return null;
+}
 
 // Downscale to keep uploads small: longest side ≤ 1024 px, JPEG ~0.85.
 async function downscale(blob: Blob, max = 1024, quality = 0.85): Promise<Blob> {
@@ -37,6 +53,7 @@ export default function PhotoField({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const setUploading = (v: boolean) => {
     setBusy(v);
@@ -79,10 +96,27 @@ export default function PhotoField({
     }
   };
 
+  // Validate then upload — shared by the file picker and drag-and-drop.
+  const handleFile = async (f: File) => {
+    const invalid = validateFile(f);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    await upload(f);
+  };
+
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) await upload(f);
+    if (f) await handleFile(f);
     e.target.value = "";
+  };
+
+  const onDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) await handleFile(f);
   };
 
   const startCamera = async () => {
@@ -100,7 +134,9 @@ export default function PhotoField({
         }
       });
     } catch {
-      setError("Camera unavailable or permission denied — you can upload a file instead.");
+      setError(
+        "Camera unavailable or permission denied — you can upload a file instead.",
+      );
     }
   };
 
@@ -127,9 +163,34 @@ export default function PhotoField({
           alt="Cardholder"
           className="size-20 rounded-lg border border-hairline object-cover"
         />
-        <Button type="button" variant="outline" size="sm" onClick={() => onChange(null)}>
-          Remove
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+          >
+            Replace
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setError(null);
+              onChange(null);
+            }}
+          >
+            <X className="size-4" /> Clear
+          </Button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={ACCEPT_ATTR}
+          className="sr-only"
+          onChange={onFile}
+        />
       </div>
     );
   }
@@ -139,7 +200,7 @@ export default function PhotoField({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept={ACCEPT_ATTR}
         className="sr-only"
         onChange={onFile}
       />
@@ -155,22 +216,46 @@ export default function PhotoField({
             <Button type="button" size="sm" onClick={capture} disabled={busy}>
               {busy ? "Saving…" : "Capture"}
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={stopCamera}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={stopCamera}
+            >
               Cancel
             </Button>
           </div>
         </div>
       ) : (
-        <div className="flex gap-2">
-          <Button
+        <div className="space-y-2">
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            className={`flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-6 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              dragOver
+                ? "border-kilala-green bg-kilala-green/5"
+                : "border-hairline bg-surface hover:border-kilala-green/60 hover:bg-kilala-green/5"
+            }`}
           >
-            {busy ? "Uploading…" : "Upload photo"}
-          </Button>
+            <ImagePlus
+              className="size-5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="text-sm font-medium text-foreground">
+              {busy ? "Uploading…" : "Choose photo to upload"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Drag &amp; drop or click · JPG, PNG, or WebP · up to {MAX_FILE_MB}{" "}
+              MB
+            </span>
+          </button>
           <Button
             type="button"
             variant="outline"
@@ -178,7 +263,7 @@ export default function PhotoField({
             disabled={busy}
             onClick={startCamera}
           >
-            Use camera
+            <Camera className="size-4" /> Use camera
           </Button>
         </div>
       )}
