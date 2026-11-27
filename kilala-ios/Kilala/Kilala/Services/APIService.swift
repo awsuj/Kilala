@@ -972,6 +972,154 @@ class APIService {
         }
     }
 
+    func requestBusinessEmailChangeOTP(
+        token: String? = nil,
+        pendingEmail: String
+    ) async throws {
+        try await sendBusinessEmailChangeOTP(
+            endpoint: "/business/request-email-change-otp",
+            token: token,
+            pendingEmail: pendingEmail
+        )
+    }
+
+    func resendBusinessEmailChangeOTP(
+        token: String? = nil,
+        pendingEmail: String
+    ) async throws {
+        try await sendBusinessEmailChangeOTP(
+            endpoint: "/business/resend-email-change-otp",
+            token: token,
+            pendingEmail: pendingEmail
+        )
+    }
+
+    private func sendBusinessEmailChangeOTP(
+        endpoint: String,
+        token: String?,
+        pendingEmail: String
+    ) async throws {
+        if let token, !token.isEmpty {
+            self.authToken = token
+        }
+        guard let url = URL(string: "\(baseURL)\(endpoint)") else {
+            throw URLError(.badURL)
+        }
+        guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
+
+        let trimmedEmail = pendingEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body: [String: String] = [
+            "pending_email": trimmedEmail,
+            "email": trimmedEmail
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        if httpResponse.statusCode == 400 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "Please enter a valid email address."
+            )
+        }
+
+        if httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "This email is already in use by another account."
+            )
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Failed to send verification code. Please try again."
+            )
+        }
+    }
+
+    func verifyBusinessEmailChange(
+        token: String? = nil,
+        pendingEmail: String,
+        otp: String
+    ) async throws -> String {
+        if let token, !token.isEmpty {
+            self.authToken = token
+        }
+        guard let url = URL(string: "\(baseURL)/business/verify-email-change") else {
+            throw URLError(.badURL)
+        }
+        guard let activeToken = (token?.isEmpty == false ? token : authToken), !activeToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(activeToken)", forHTTPHeaderField: "Authorization")
+
+        let trimmedEmail = pendingEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedOTP = otp.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body: [String: String] = [
+            "pending_email": trimmedEmail,
+            "email": trimmedEmail,
+            "otp": trimmedOTP
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        if httpResponse.statusCode == 400 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.badRequest(
+                backendError?.error ?? "Invalid or Expired OTP"
+            )
+        }
+
+        if httpResponse.statusCode == 409 {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.conflict(
+                backendError?.error ?? "This email is already in use by another account."
+            )
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
+            throw APIError.serverError(
+                backendError?.error ?? "Unable to verify email change. Please try again."
+            )
+        }
+
+        struct VerifyBusinessEmailResponse: Decodable {
+            let email: String?
+        }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        if let updatedProfile = try? decoder.decode(BusinessProfile.self, from: data) {
+            self.currentBusinessProfile = updatedProfile
+        }
+        let decoded = try? decoder.decode(VerifyBusinessEmailResponse.self, from: data)
+        let verifiedEmail = (decoded?.email?.isEmpty == false ? decoded?.email : nil) ?? trimmedEmail
+        self.currentUserEmail = verifiedEmail
+        return verifiedEmail
+    }
+
     func changePassword(
         token: String = "",
         currentPassword: String,

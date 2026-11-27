@@ -96,6 +96,7 @@ struct BusinessDashboardView: View {
                     case .profile:
                         NavigationStack {
                             BusinessProfileView(
+                                token: activeToken,
                                 profile: businessProfile,
                                 userEmail: userEmail,
                                 onLogout: onLogout
@@ -145,27 +146,17 @@ struct BusinessDashboardView: View {
             await loadDashboardMetrics(for: selectedTimeframe)
         }
         .fullScreenCover(isPresented: $isScannerPresented) {
-            NavigationStack {
-                QRScannerView(
-                    token: activeToken,
-                    onLogout: onLogout,
-                    isEmbeddedInDrawer: true,
-                    isScannerVisible: isScannerPresented
-                ) {
-                    Task {
-                        await loadDashboardMetrics(for: selectedTimeframe)
-                    }
+            QRScannerView(
+                token: activeToken,
+                onLogout: onLogout,
+                isEmbeddedInDrawer: true,
+                isScannerVisible: isScannerPresented,
+                onClose: {
+                    isScannerPresented = false
                 }
-                .navigationTitle("Scan QR")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Close") {
-                            isScannerPresented = false
-                        }
-                        .font(.kilala(.subheadline, weight: .semibold))
-                        .foregroundColor(.kilalaInk)
-                    }
+            ) {
+                Task {
+                    await loadDashboardMetrics(for: selectedTimeframe)
                 }
             }
             .tint(.kilalaGreen)
@@ -312,16 +303,16 @@ private struct BusinessHomeView: View {
     private var financialSummaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Top Label
-            Text("NET SALES COLLECTED")
+            Text("DISCOUNTS GIVEN")
                 .font(.kilala(.caption, weight: .bold))
                 .tracking(0.8)
                 .foregroundColor(.kilalaInkSecondary)
 
             // Hero Figure
             HStack(alignment: .center, spacing: 8) {
-                Text(String(format: "₱%.2f", totalDiscountedAmount))
+                Text(String(format: "₱%.2f", totalDiscountedSales))
                     .font(.kilala(size: 34, weight: .bold, relativeTo: .largeTitle))
-                    .foregroundColor(.kilalaInk)
+                    .foregroundColor(.kilalaGreen)
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -340,11 +331,11 @@ private struct BusinessHomeView: View {
             // 2-Column Secondary Breakdown
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Gross Sales")
+                    Text("Net Sales Collected")
                         .font(.kilala(.footnote, weight: .medium))
                         .foregroundColor(.kilalaInkSecondary)
 
-                    Text(String(format: "₱%.2f", totalOriginalAmount))
+                    Text(String(format: "₱%.2f", totalDiscountedAmount))
                         .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
                         .foregroundColor(.kilalaInk)
                         .contentTransition(.numericText())
@@ -358,13 +349,13 @@ private struct BusinessHomeView: View {
                     .frame(width: 1, height: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Discounts Granted")
+                    Text("Gross Sales")
                         .font(.kilala(.footnote, weight: .medium))
                         .foregroundColor(.kilalaInkSecondary)
 
-                    Text(String(format: "−₱%.2f", totalDiscountedSales))
+                    Text(String(format: "₱%.2f", totalOriginalAmount))
                         .font(.kilala(size: 18, weight: .semibold, relativeTo: .headline))
-                        .foregroundColor(.kilalaGreen)
+                        .foregroundColor(.kilalaInk)
                         .contentTransition(.numericText())
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -384,13 +375,13 @@ private struct BusinessHomeView: View {
 
     // MARK: - Recent Activity Section
 
-    private var groupedRecentTransactions: [TransactionDateGroup] {
+    private var sortedRecentTransactions: [TransactionHistoryItem] {
         let sortedNewestFirst = recentTransactions.sorted { lhs, rhs in
             let leftDate = TransactionDateFormatting.parse(lhs.createdAt) ?? Date.distantPast
             let rightDate = TransactionDateFormatting.parse(rhs.createdAt) ?? Date.distantPast
             return leftDate > rightDate
         }
-        return TransactionDateFormatting.groupByDate(Array(sortedNewestFirst.prefix(5)))
+        return Array(sortedNewestFirst.prefix(5))
     }
 
     private var recentActivitySection: some View {
@@ -461,9 +452,36 @@ private struct BusinessHomeView: View {
                 }
                 .background(Color.kilalaPaper)
             } else {
-                ChronologicalTransactionList(groups: groupedRecentTransactions) { item in
-                    selectedTransaction = item
+                VStack(spacing: 0) {
+                    ForEach(Array(sortedRecentTransactions.enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            selectedTransaction = item
+                        } label: {
+                            TransactionHistoryRow(
+                                item: item,
+                                showCardNumber: false,
+                                showTimeOnly: false,
+                                showDateAndTime: true,
+                                horizontalPadding: 16
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < sortedRecentTransactions.count - 1 {
+                            Rectangle()
+                                .fill(Color.kilalaMintBorder)
+                                .frame(height: 1)
+                                .padding(.leading, 16)
+                        }
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                )
             }
         }
     }

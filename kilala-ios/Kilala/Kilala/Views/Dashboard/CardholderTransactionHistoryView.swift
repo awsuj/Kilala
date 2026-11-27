@@ -189,7 +189,11 @@ struct CardholderTransactionHistoryView: View {
                 .foregroundColor(.kilalaInkSecondary)
                 .accessibilityHidden(true)
 
-            TextField("Search by merchant name", text: $searchText)
+            TextField(
+                "Search by merchant name",
+                text: $searchText,
+                prompt: Text("Search by merchant name").foregroundStyle(Color.kilalaInk.opacity(0.4))
+            )
                 .font(.kilala(.callout))
                 .foregroundColor(.kilalaInk)
                 .tint(.kilalaGreen)
