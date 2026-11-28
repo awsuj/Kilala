@@ -79,6 +79,10 @@ jobs:
             cd kilala-web/app/components/public
             if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
           fi
+      
+      - name: Generate Cloudflare Type Definitions
+        working-directory: kilala-web
+        run: npm run cf-typegen
 
       - name: Install Mobile App dependencies (React Native/Expo)
         if: steps.dependency-cache.outputs.cache-hit != 'true'

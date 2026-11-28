@@ -2,6 +2,10 @@ import { test, expect } from "@playwright/test";
 
 const WEB = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 
+function localPhotoUrl(url: string): string {
+  return new URL(new URL(url).pathname, WEB).toString();
+}
+
 // The upload route gates on the session cookie, which the portal only *decodes*
 // (never verifies — the backend is the authority), so a fake admin JWT suffices.
 function adminCookie(): string {
@@ -54,7 +58,7 @@ test.describe("Cardholder photo upload/serve — /api/photos", () => {
     const { url } = await res.json();
     expect(url).toMatch(/\/api\/photos\/cardholders\/.+\.png$/);
 
-    const got = await request.get(url);
+    const got = await request.get(localPhotoUrl(url));
     expect(got.status()).toBe(200);
     expect(got.headers()["content-type"]).toMatch(/^image\//);
   });
@@ -70,7 +74,7 @@ test.describe("Cardholder photo upload/serve — /api/photos", () => {
       multipart: { photo: { name: "x.png", mimeType: "image/png", buffer: PNG } },
     });
     const { url } = await up.json();
-    const got = await request.get(url);
+    const got = await request.get(localPhotoUrl(url));
     expect(got.headers()["x-content-type-options"]).toBe("nosniff");
   });
 });

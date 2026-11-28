@@ -4,6 +4,8 @@ const WEB = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 const API = process.env.API_BASE_URL || "http://localhost:5001";
 const ADMIN_EMAIL = "admin@makati.gov.ph";
 const ADMIN_PASSWORD = "MockHashForTestingOnly123456789012";
+const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL ?? "superadmin@kilala.gov.ph";
+const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD ?? "Kilala2026";
 
 // Camera path needs a fake media device in the browser.
 test.use({
@@ -29,6 +31,35 @@ async function loginAsAdmin(request: APIRequestContext, page: Page) {
   ]);
 }
 
+async function loginAsSuperadmin(request: APIRequestContext, page: Page) {
+  const res = await request.post(`${API}/api/auth/login`, {
+    data: { email: SUPERADMIN_EMAIL, password: SUPERADMIN_PASSWORD },
+  });
+  expect(res.status()).toBe(200);
+  const { token } = await res.json();
+  await page.context().addCookies([
+    { name: process.env.AUTH_COOKIE || "kilala_token", value: token, url: WEB },
+  ]);
+}
+
+async function useLocalPhotoUrls(page: Page, delayMs = 0) {
+  await page.route("**/api/photos", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const response = await route.fetch();
+    if (!response.ok()) {
+      await route.fulfill({ response });
+      return;
+    }
+    const { url } = (await response.json()) as { url: string };
+    const localUrl = new URL(new URL(url).pathname, WEB).toString();
+    await route.fulfill({ response, json: { url: localUrl } });
+  });
+}
+
 async function openAddRecord(page: Page) {
   await page.goto("/dashboard/records");
   await page.getByRole("button", { name: "+ Add Record" }).click();
@@ -51,18 +82,20 @@ test.describe("Add Record — cardholder photo", () => {
     await loginAsAdmin(request, page);
     const dialog = await openAddRecord(page);
     await expect(dialog.locator('label[for="photo"]')).toContainText("Photo");
-    await expect(dialog.getByRole("button", { name: /Upload photo/i })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /Choose photo to upload/i })).toBeVisible();
     await expect(dialog.getByRole("button", { name: /Use camera/i })).toBeVisible();
   });
 
   test("uploading a photo shows a thumbnail backed by /api/photos", async ({ page, request }) => {
     await loginAsAdmin(request, page);
+    await useLocalPhotoUrls(page);
     const dialog = await openAddRecord(page);
     await setPhoto(dialog);
   });
 
   test("adds a Senior record with a photo and shows it in details", async ({ page, request }) => {
-    await loginAsAdmin(request, page);
+    await loginAsSuperadmin(request, page);
+    await useLocalPhotoUrls(page);
     const dialog = await openAddRecord(page);
     const card = `MKT-QA-PHOTO-${Date.now()}`;
 
@@ -90,10 +123,7 @@ test.describe("Add Record — cardholder photo", () => {
 
   test("Add record is disabled while a photo upload is in flight", async ({ page, request }) => {
     await loginAsAdmin(request, page);
-    await page.route("**/api/photos", async (route) => {
-      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1500));
-      await route.continue();
-    });
+    await useLocalPhotoUrls(page, 1500);
     const dialog = await openAddRecord(page);
     await dialog.locator('input[type="file"]').setInputFiles({
       name: "f.png",
@@ -106,7 +136,7 @@ test.describe("Add Record — cardholder photo", () => {
   });
 
   test("adds a record with no photo (photo stays optional)", async ({ page, request }) => {
-    await loginAsAdmin(request, page);
+    await loginAsSuperadmin(request, page);
     const dialog = await openAddRecord(page);
     const card = `MKT-QA-NOPHOTO-${Date.now()}`;
 
