@@ -38,6 +38,7 @@ export type CardRecord = {
   pwd?: PwdDetails;
   expiry: string | null; // null = lifetime
   suspended: boolean;
+  photoUrl?: string | null;
   history: HistoryEvent[];
 };
 
@@ -56,7 +57,11 @@ export type NewRecordInput = {
   address: string;
   cardNumber: string;
   issuingLgu: string;
+  // LGU id the record is filed under. Set by SUPERADMIN via the form's Issuing
+  // LGU dropdown; omitted for LGU_ADMIN (their city is implicit server-side).
+  issuingLguId?: string;
   issuingDate: string;
   privilegeType: PrivilegeType;
   pwd?: PwdDetails;
+  photoUrl?: string;
 };

@@ -209,19 +209,29 @@ type ToastState = {
 export default function RecordsView({
   initialRows,
   lgus,
+  role,
 }: {
   initialRows: CardRecord[];
   lgus: Lgu[];
+  role: string | null;
 }) {
   // useSearchParams needs a Suspense boundary
   return (
     <Suspense fallback={null}>
-      <RecordsInner initialRows={initialRows} lgus={lgus} />
+      <RecordsInner initialRows={initialRows} lgus={lgus} role={role} />
     </Suspense>
   );
 }
 
-function RecordsInner({ initialRows, lgus }: { initialRows: CardRecord[]; lgus: Lgu[] }) {
+function RecordsInner({
+  initialRows,
+  lgus,
+  role,
+}: {
+  initialRows: CardRecord[];
+  lgus: Lgu[];
+  role: string | null;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -530,7 +540,7 @@ function RecordsInner({ initialRows, lgus }: { initialRows: CardRecord[]; lgus: 
                   aria-label="Filter by type"
                   value={typeFilter}
                   onChange={(e) => changeType(e.target.value as TypeFilter)}
-                  className="h-10 appearance-none rounded-full border border-hairline bg-white pl-4 pr-10 text-sm"
+                  className="h-8 appearance-none rounded-full border border-hairline bg-white pl-4 pr-9 text-sm"
                 >
                   <option value="all">All types</option>
                   <option value="PWD">PWD</option>
@@ -543,7 +553,12 @@ function RecordsInner({ initialRows, lgus }: { initialRows: CardRecord[]; lgus: 
               </div>
             </div>
 
-            <AddRecordDialog existingIds={rows.map((r) => r.id)} lgus={lgus} onAdd={handleAdd} />
+            <AddRecordDialog
+              existingIds={rows.map((r) => r.id)}
+              lgus={lgus}
+              isSuperAdmin={role === "SUPERADMIN"}
+              onAdd={handleAdd}
+            />
           </div>
 
           <Table>

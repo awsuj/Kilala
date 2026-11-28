@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { apiFetch, ApiError } from "@/lib/api";
-import { getLguIdParam, getSelectedCity, ALL_CITIES } from "@/lib/city";
+import { getLguIdParam } from "@/lib/city";
 import { getCurrentUser } from "@/lib/session";
 import { newRecordBody } from "./adapter";
 import type { NewRecordInput } from "./types";
@@ -23,16 +23,18 @@ export async function createCardholder(
   const user = await getCurrentUser();
 
   if (user?.role === "SUPERADMIN") {
-    const city = await getSelectedCity();
-    if (!city || city === ALL_CITIES) {
-      return { error: "Select a city from the top bar before adding a record." };
+    // The record's LGU is whatever the admin picked in the form's Issuing LGU
+    // dropdown — the single source of truth, independent of the top-bar filter.
+    const lguId = input.issuingLguId?.trim();
+    if (!lguId) {
+      return { error: "Select an issuing LGU before adding a record." };
     }
-    // SUPERADMIN with a specific city — POST with explicit lgu_id.
+    // SUPERADMIN — POST with explicit lgu_id.
     try {
-      await apiFetch(`/api/lgu/cardholders?lgu_id=${encodeURIComponent(city)}`, {
-        method: "POST",
-        body: JSON.stringify(newRecordBody(input, expiry)),
-      });
+      await apiFetch(
+        `/api/lgu/cardholders?lgu_id=${encodeURIComponent(lguId)}`,
+        { method: "POST", body: JSON.stringify(newRecordBody(input, expiry)) },
+      );
     } catch (e) {
       return fail(e, "Could not add the record.");
     }

@@ -24,6 +24,7 @@ export interface BackendCardholder {
   status: "ACTIVE" | "EXPIRED" | "REVOKED" | "SUSPENDED";
   issued_date: string;
   expiry_date: string | null;
+  photo_url?: string | null;
 }
 
 /** Postgres DATE/TIMESTAMP can arrive as ISO; the UI wants bare YYYY-MM-DD. */
@@ -55,7 +56,10 @@ export function toCardRecord(
             (row.card_system_type as CardSystemType | null) ?? undefined,
         }
       : undefined,
-    expiry: row.expiry_date ? dateOnly(row.expiry_date) : null,
+    // Senior Citizen cards never expire — ignore any stored expiry_date so a
+    // legacy/mis-entered value can't mark a senior as expiring or expired.
+    expiry: !isPwd || !row.expiry_date ? null : dateOnly(row.expiry_date),
+    photoUrl: row.photo_url ?? null,
     // REVOKED has no distinct UI state yet; surface it as suspended.
     suspended: row.status === "SUSPENDED" || row.status === "REVOKED",
     // No cardholder audit table yet — seed a single "Added" event from issuance.
@@ -81,5 +85,6 @@ export function newRecordBody(input: NewRecordInput, expiry: string | null) {
     disability_nature: input.pwd?.disabilityNature ?? null,
     card_system_type: input.pwd?.cardSystemType ?? null,
     issued_date: input.issuingDate || null,
+    photo_url: input.photoUrl ?? null,
   };
 }

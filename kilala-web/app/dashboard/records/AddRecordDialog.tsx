@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +28,7 @@ import type {
   PrivilegeType,
 } from "./types";
 import type { Lgu } from "@/lib/lgus";
+import PhotoField from "./PhotoField";
 import {
   CARD_SYSTEM_LABELS,
   DISABILITY_TYPES,
@@ -52,6 +54,7 @@ type FormState = {
   disabilityType: string;
   disabilityNature: DisabilityNature | "";
   cardSystemType: CardSystemType | "";
+  photoUrl: string;
 };
 type Errors = Partial<Record<keyof FormState, string>>;
 
@@ -69,6 +72,7 @@ const emptyForm: FormState = {
   disabilityType: "",
   disabilityNature: "",
   cardSystemType: "",
+  photoUrl: "",
 };
 
 export function Field({
@@ -110,18 +114,32 @@ export function Field({
 type Props = {
   existingIds: string[];
   lgus: Lgu[];
+  // SUPERADMIN picks the issuing LGU in the form; LGU_ADMIN's city is implicit.
+  isSuperAdmin: boolean;
   onAdd: (input: NewRecordInput) => void;
 };
 
-export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
+export default function AddRecordDialog({
+  existingIds,
+  lgus,
+  isSuperAdmin,
+  onAdd,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Errors>({});
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const setField = (field: keyof FormState, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
   const today = todayLocal();
+
+  // base-ui's SelectValue renders the raw value (the LGU id) unless given an
+  // items map to look up each value's label.
+  const lguItems = Object.fromEntries(
+    lgus.map((lgu) => [lgu.id, lgu.municipality_name]),
+  );
 
   // Card system only matters for non-permanent PWD cards (it decides the expiry)
   const needsCardSystem =
@@ -153,7 +171,9 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
     else if (existingIds.some((id) => id.toLowerCase() === card))
       e.cardNumber = "This card number already exists.";
 
-    if (!form.issuingLgu.trim()) e.issuingLgu = "Issuing LGU is required.";
+    // LGU admins file under their own city implicitly — only super admins pick.
+    if (isSuperAdmin && !form.issuingLgu.trim())
+      e.issuingLgu = "Issuing LGU is required.";
 
     if (!form.issuingDate) e.issuingDate = "Issuing date is required.";
     else if (form.issuingDate > today)
@@ -185,6 +205,7 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (photoUploading) return; // don't save before the photo finishes uploading
     const found = validate();
     const { privilegeType, disabilityNature, cardSystemType } = form;
     if (Object.keys(found).length > 0 || privilegeType === "") {
@@ -201,8 +222,12 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
       address: form.address.trim(),
       cardNumber: form.cardNumber.trim(),
       issuingLgu: form.issuingLgu.trim(),
+      // SUPERADMIN only — the picked LGU id drives which city the record is
+      // filed under (see createCardholder). Omitted for LGU admins.
+      issuingLguId: isSuperAdmin ? form.issuingLgu.trim() : undefined,
       issuingDate: form.issuingDate,
       privilegeType,
+      photoUrl: form.photoUrl || undefined,
     };
 
     if (privilegeType === "PWD") {
@@ -299,19 +324,25 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
                 />
               </Field>
               <Field id="sex" label="Sex*" error={errors.sex}>
-                <select
-                  id="sex"
-                  value={form.sex}
-                  onChange={(e) => setField("sex", e.target.value)}
-                  aria-invalid={!!errors.sex}
-                  className="h-10 w-full appearance-none rounded-md border border-hairline bg-white px-3 text-sm"
-                >
-                  <option value="" disabled>
-                    Select sex
-                  </option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                </select>
+                <div className="relative">
+                  <select
+                    id="sex"
+                    value={form.sex}
+                    onChange={(e) => setField("sex", e.target.value)}
+                    aria-invalid={!!errors.sex}
+                    className="h-8 w-full appearance-none rounded-lg border border-input bg-transparent pl-2.5 pr-8 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20"
+                  >
+                    <option value="" disabled>
+                      Select sex
+                    </option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  />
+                </div>
               </Field>
             </div>
 
@@ -322,6 +353,14 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
                 value={form.address}
                 onChange={(e) => setField("address", e.target.value)}
                 aria-invalid={!!errors.address}
+              />
+            </Field>
+
+            <Field id="photo" label="Photo" optional>
+              <PhotoField
+                value={form.photoUrl || null}
+                onChange={(url) => setField("photoUrl", url ?? "")}
+                onUploadingChange={setPhotoUploading}
               />
             </Field>
 
@@ -339,34 +378,39 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
               />
             </Field>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                id="issuingLgu"
-                label="Issuing LGU*"
-                error={errors.issuingLgu}
-              >
-                <Select
-                  value={form.issuingLgu}
-                  onValueChange={(v: string | null) =>
-                    setField("issuingLgu", v ?? "")
-                  }
+            <div
+              className={`grid gap-4 ${isSuperAdmin ? "sm:grid-cols-2" : ""}`}
+            >
+              {isSuperAdmin && (
+                <Field
+                  id="issuingLgu"
+                  label="Issuing LGU*"
+                  error={errors.issuingLgu}
                 >
-                  <SelectTrigger
-                    id="issuingLgu"
-                    className="w-full"
-                    aria-invalid={!!errors.issuingLgu}
+                  <Select
+                    items={lguItems}
+                    value={form.issuingLgu}
+                    onValueChange={(v: string | null) =>
+                      setField("issuingLgu", v ?? "")
+                    }
                   >
-                    <SelectValue placeholder="Select a city" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {lgus.map((lgu) => (
-                      <SelectItem key={lgu.id} value={lgu.municipality_name}>
-                        {lgu.municipality_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+                    <SelectTrigger
+                      id="issuingLgu"
+                      className="w-full"
+                      aria-invalid={!!errors.issuingLgu}
+                    >
+                      <SelectValue placeholder="Select a city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lgus.map((lgu) => (
+                        <SelectItem key={lgu.id} value={lgu.id}>
+                          {lgu.municipality_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
               <Field
                 id="issuingDate"
                 label="Issuing date*"
@@ -534,7 +578,9 @@ export default function AddRecordDialog({ existingIds, lgus, onAdd }: Props) {
               >
                 Cancel
               </Button>
-              <Button type="submit">Add record</Button>
+              <Button type="submit" disabled={photoUploading}>
+                Add record
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

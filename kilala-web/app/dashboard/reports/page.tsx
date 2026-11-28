@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/table";
 import { apiFetch, ApiError } from "@/lib/api";
 import { getLguIdParam } from "@/lib/city";
+import ExportCsvButton from "./ExportCsvButton";
+import VerificationLogCard, { type LogRow } from "./VerificationLogCard";
 
 // Live discounts & sales — GET /api/lgu/discounts (aggregated from transactions)
 interface DiscountsResponse {
@@ -32,39 +34,6 @@ interface DiscountsResponse {
 
 const peso = (n: number) =>
   `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-// Live audit log — GET /api/lgu/logs
-interface LogRow {
-  id: string;
-  status_at_scan: string;
-  is_valid: boolean;
-  failure_reason: string | null;
-  scanned_at: string;
-  first_name: string;
-  last_name: string;
-  lgu_id_number: string;
-  privilege_type: "PWD" | "SENIOR_CITIZEN";
-  business_name: string;
-  branch_name: string | null;
-}
-
-const typeLabel = (t: LogRow["privilege_type"]) =>
-  t === "SENIOR_CITIZEN" ? "Senior" : "PWD";
-
-/** "Today, 2:41 PM" / "Yesterday, 4:30 PM" / "Nov 3, 10:12 AM". */
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
-  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (sameDay(d, today)) return `Today, ${time}`;
-  if (sameDay(d, yesterday)) return `Yesterday, ${time}`;
-  const day = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${day}, ${time}`;
-}
 
 export default async function ReportsPage() {
   const lguParam = await getLguIdParam();
@@ -94,6 +63,17 @@ export default async function ReportsPage() {
     discounts && discounts.summary.totalSales > 0
       ? `${((discounts.summary.totalDiscounts / discounts.summary.totalSales) * 100).toFixed(1)}%`
       : "—";
+
+  // CSV rows for the discounts report — raw numbers so they're spreadsheet-friendly.
+  const discountRows: (string | number)[][] = discounts
+    ? discounts.byBusiness.map((b) => [
+        b.business_name,
+        b.branch_name || "",
+        b.txns,
+        b.sales,
+        b.discounts,
+      ])
+    : [];
 
   const summaryCards = [
     { label: "Total Discounts Provided", value: discounts ? peso(discounts.summary.totalDiscounts) : "—", hint: "All-time, LGU-wide" },
@@ -132,8 +112,19 @@ export default async function ReportsPage() {
           <CardDescription>
             Total discounts each merchant gave on PWD &amp; Senior sales
           </CardDescription>
-          <CardAction>
+          <CardAction className="flex items-center gap-2">
             <Badge variant="outline">All-time</Badge>
+            <ExportCsvButton
+              filename="kilala-discounts-by-business.csv"
+              headers={[
+                "Business",
+                "Branch",
+                "Transactions",
+                "Sales",
+                "Discounts given",
+              ]}
+              rows={discountRows}
+            />
           </CardAction>
         </CardHeader>
         <CardContent>
@@ -172,76 +163,8 @@ export default async function ReportsPage() {
         </CardContent>
       </Card>
 
-      {/* Verification audit log — live */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Verification audit log</CardTitle>
-          <CardDescription>Recent QR scans across the LGU</CardDescription>
-          <CardAction>
-            <Badge variant="outline">Last 100</Badge>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          {logsError ? (
-            <p className="py-8 text-center text-sm text-destructive">
-              Couldn&apos;t load audit log: {logsError}
-            </p>
-          ) : logs.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No verification scans recorded yet.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Cardholder</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Business</TableHead>
-                  <TableHead>Result</TableHead>
-                  <TableHead>Reason</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {logs.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                      {formatWhen(l.scanned_at)}
-                    </TableCell>
-                    <TableCell>
-                      <p className="font-bold text-foreground">
-                        {l.last_name}, {l.first_name}
-                      </p>
-                      <p className="font-mono text-xs text-muted-foreground">{l.lgu_id_number}</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-medium text-muted-foreground">
-                        {typeLabel(l.privilege_type)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-foreground">
-                      {l.business_name}
-                      {l.branch_name ? ` · ${l.branch_name}` : ""}
-                    </TableCell>
-                    <TableCell>
-                      {l.is_valid ? (
-                        <Badge variant="secondary">Valid</Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-destructive/30 text-destructive">
-                          Invalid
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {l.failure_reason || "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {/* Verification audit log — live, with filters + filtered export */}
+      <VerificationLogCard logs={logs} error={logsError} />
     </div>
   );
 }
