@@ -18,6 +18,10 @@ struct OTPVerificationView: View {
             onVerified: (String) -> Void,
             onProfileVerified: ((CardholderProfile) -> Void)?
         )
+        case businessEmailChange(
+            token: String,
+            onVerified: (String) -> Void
+        )
     }
 
     // MARK: - Properties
@@ -42,10 +46,12 @@ struct OTPVerificationView: View {
     // MARK: - Computed Properties
 
     private var isEmailChangeMode: Bool {
-        if case .emailChange = mode {
+        switch mode {
+        case .emailChange, .businessEmailChange:
             return true
+        case .signup:
+            return false
         }
-        return false
     }
 
     private var trimmedOTP: String {
@@ -79,6 +85,19 @@ struct OTPVerificationView: View {
             token: token,
             onVerified: onVerified,
             onProfileVerified: onProfileVerified
+        )
+    }
+
+    init(
+        businessEmail: String,
+        token: String = APIService.shared.authToken ?? "",
+        onVerified: @escaping (String) -> Void
+    ) {
+        self.email = businessEmail
+        self._isEmailVerified = .constant(false)
+        self.mode = .businessEmailChange(
+            token: token,
+            onVerified: onVerified
         )
     }
 
@@ -461,6 +480,19 @@ struct OTPVerificationView: View {
                         onVerified(verifiedEmail)
                         dismiss()
                     }
+
+                case .businessEmailChange(let token, let onVerified):
+                    let activeToken = token.isEmpty ? (APIService.shared.authToken ?? "") : token
+                    let verifiedEmail = try await APIService.shared.verifyBusinessEmailChange(
+                        token: activeToken,
+                        pendingEmail: email,
+                        otp: trimmedOTP
+                    )
+                    await MainActor.run {
+                        self.isLoading = false
+                        onVerified(verifiedEmail)
+                        dismiss()
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -485,6 +517,13 @@ struct OTPVerificationView: View {
                 case .emailChange(let token, _, _):
                     let activeToken = token.isEmpty ? (APIService.shared.authToken ?? "") : token
                     try await APIService.shared.resendCardholderEmailChangeOTP(
+                        token: activeToken,
+                        pendingEmail: email
+                    )
+
+                case .businessEmailChange(let token, _):
+                    let activeToken = token.isEmpty ? (APIService.shared.authToken ?? "") : token
+                    try await APIService.shared.resendBusinessEmailChangeOTP(
                         token: activeToken,
                         pendingEmail: email
                     )

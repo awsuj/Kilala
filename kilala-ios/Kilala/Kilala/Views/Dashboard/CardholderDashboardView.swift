@@ -175,6 +175,8 @@ private struct CardholderFlatTabBar: View {
     }
 }
 
+// MARK: - Cardholder Home Tab View
+
 struct CardholderHomeView: View {
     let profile: CardholderProfile?
     let isLoading: Bool
@@ -189,201 +191,335 @@ struct CardholderHomeView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.white
+                Color.kilalaPaper
                     .ignoresSafeArea()
 
-                if let profile = profile {
-                    VStack(spacing: 16) {
-                        Spacer(minLength: 8)
+                VStack(alignment: .leading, spacing: 14) {
+                    // Stacked Mobile Editorial Header (No Top Logout Button)
+                    BusinessPortalHeader(title: "My Kilala ID")
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
 
-                        // Digital ID & QR Card Container
-                        VStack(spacing: 16) {
-                            // Cardholder Header Info
-                            VStack(spacing: 6) {
-                                Text(profile.lguName.uppercased())
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .tracking(0.8)
-                                    .foregroundColor(.gray)
+                    if let profile = profile {
+                        VStack(spacing: 12) {
+                            Spacer(minLength: 0)
 
-                                // Full Name (masked with "*" from 2nd character of each word when hidden)
-                                Text(isQRRevealed ? profile.fullName : maskedFullName(from: profile.fullName))
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.black)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
+                            digitalIDCard(for: profile)
+                                .padding(.horizontal, 16)
+                                .animation(.easeInOut(duration: 0.25), value: isQRRevealed)
 
-                                // Privilege Type (always clear) + LGU ID Number (blurred when hidden)
-                                HStack(spacing: 0) {
-                                    Text("\(formattedPrivilegeType(from: profile.privilegeType)) • ")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(Color(white: 0.35))
-
-                                    Text(profile.lguIdNumber)
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(Color(white: 0.35))
-                                        .blur(radius: isQRRevealed ? 0 : 6)
-                                }
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-
-                                if let disability = profile.disabilityType, !disability.isEmpty {
-                                    Text(disability)
-                                        .font(.footnote)
-                                        .foregroundColor(.gray)
-                                }
-                            }
-
-                            // Interactive Privacy-Blurred QR Code Centerpiece
-                            ZStack {
-                                Image(uiImage: generateQRCode(from: profile.qrSecretToken))
-                                    .interpolation(.none)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .padding(10)
-                                    .scaleEffect(isQRRevealed ? 1.0 : 0.97)
-                                    .blur(radius: isQRRevealed ? 0 : 10)
-
-                                // Frosted / Blurred Privacy Cover Overlay
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(.ultraThinMaterial)
-
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(Color.white.opacity(0.65))
-
-                                    VStack(spacing: 10) {
-                                        ZStack {
-                                            Circle()
-                                                .fill(Color(white: 0.92))
-                                                .frame(width: 46, height: 46)
-
-                                            Image(systemName: "eye.slash.fill")
-                                                .font(.system(size: 18, weight: .semibold))
-                                                .foregroundColor(Color(white: 0.25))
-                                        }
-
-                                        Text("Tap or swipe to show QR code")
-                                            .font(.footnote)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(Color(white: 0.25))
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .padding(.horizontal, 20)
-                                }
-                                .opacity(isQRRevealed ? 0 : 1)
-                                .allowsHitTesting(false)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(1, contentMode: .fit)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                            )
-                            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
-                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .onTapGesture {
-                                isQRRevealed.toggle()
-                            }
-                            .gesture(
-                                DragGesture(minimumDistance: 20)
-                                    .onEnded { _ in
-                                        isQRRevealed.toggle()
-                                    }
-                            )
-
-                            // Subtle interaction hint & Card Status
-                            VStack(spacing: 10) {
-                                Text(isQRRevealed ? "Tap or swipe QR code to hide" : "QR code is hidden for your privacy")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-
-                                Text("Status: \(profile.status)")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        profile.status == "ACTIVE"
-                                            ? Color.green.opacity(0.15)
-                                            : Color.red.opacity(0.15)
-                                    )
-                                    .foregroundColor(profile.status == "ACTIVE" ? .green : .red)
-                                    .cornerRadius(8)
-                            }
+                            Spacer(minLength: 4)
                         }
-                        .padding(.vertical, 20)
-                        .padding(.horizontal, 14)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(white: 0.96))
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
-                        )
-                        .padding(.horizontal, 18)
-                        .animation(.easeInOut(duration: 0.25), value: isQRRevealed)
-
-                        Spacer(minLength: 8)
-                    }
-                } else if let errorMessage = errorMessage, !isLoading {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.circle")
-                            .font(.system(size: 36))
-                            .foregroundColor(.gray)
-
-                        Text(errorMessage)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.red)
-                            .multilineTextAlignment(.center)
-
-                        Button(action: onRetry) {
-                            Text("Retry")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 28)
-                                .padding(.vertical, 12)
-                                .background(Color(white: 0.25))
-                                .cornerRadius(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let errorMessage = errorMessage, !isLoading {
+                        VStack {
+                            Spacer()
+                            errorStateCard(message: errorMessage)
+                                .padding(.horizontal, 16)
+                            Spacer()
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        VStack {
+                            Spacer()
+                            loadingStateCard
+                                .padding(.horizontal, 16)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .padding(.horizontal, 32)
-                } else {
-                    ProgressView("Loading Digital ID...")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
                 }
             }
             .navigationTitle("My Kilala ID")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if let onLogout = onLogout {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Logout", action: onLogout)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.black)
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
+    // MARK: - Digital ID & QR Card Container
+
+    private func digitalIDCard(for profile: CardholderProfile) -> some View {
+        let badge = classificationBadge(for: profile.privilegeType)
+        let statusAppearance = statusBadgeAppearance(for: profile.status)
+        let displayName = formattedDisplayName(for: profile)
+        let isPWD = profile.privilegeType.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "PWD"
+        let trimmedDisability = (profile.disabilityType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return VStack(spacing: 14) {
+            // Cardholder Header Info
+            VStack(spacing: 6) {
+                Text(profile.lguName.uppercased())
+                    .font(.kilala(.caption, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundColor(.kilalaInkSecondary)
+
+                // Full Name with Middle Initial (masked with "*" while preserving middle initial period when hidden)
+                Text(isQRRevealed ? displayName : maskedFullName(from: displayName))
+                    .font(.kilala(size: 22, weight: .bold, relativeTo: .title2))
+                    .foregroundColor(.kilalaInk)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                // LGU ID Number on its own line (blurred when hidden, unblurred when revealed)
+                Text(profile.lguIdNumber)
+                    .font(.kilalaMono(.subheadline, weight: .semibold))
+                    .foregroundColor(.kilalaInkSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .blur(radius: isQRRevealed ? 0 : 6)
+
+                // Classification Badge + PWD Disability Type on the same horizontal line (always unblurred)
+                HStack(alignment: .center, spacing: 8) {
+                    KilalaStatusBadge(
+                        icon: badge.icon,
+                        label: formattedPrivilegeType(from: profile.privilegeType),
+                        foreground: badge.foreground,
+                        background: badge.fill,
+                        cornerRadius: 8
+                    )
+
+                    if isPWD && !trimmedDisability.isEmpty {
+                        Text("•")
+                            .font(.kilala(.footnote, weight: .bold))
+                            .foregroundColor(.kilalaInkMuted)
+                            .accessibilityHidden(true)
+
+                        Text(trimmedDisability)
+                            .font(.kilala(.footnote, weight: .semibold))
+                            .foregroundColor(.kilalaInkSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .padding(.top, 2)
+            }
+
+            // Interactive Privacy-Blurred QR Code Centerpiece
+            ZStack {
+                Image(uiImage: generateQRCode(from: profile.qrSecretToken))
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(10)
+                    .scaleEffect(isQRRevealed ? 1.0 : 0.97)
+                    .blur(radius: isQRRevealed ? 0 : 8)
+
+                // Frosted / Blurred Privacy Cover Overlay
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.70)
+
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.kilalaPaper.opacity(0.52))
+
+                    VStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.kilalaMint)
+                                .frame(width: 48, height: 48)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.kilalaMintBorder, lineWidth: 1)
+                                )
+
+                            Image(systemName: "eye.slash.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.kilalaGreen)
+                        }
+
+                        Text("Tap or swipe to show QR code")
+                            .font(.kilala(.subheadline, weight: .bold))
+                            .foregroundColor(.kilalaInk)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .opacity(isQRRevealed ? 0 : 1)
+                .allowsHitTesting(false)
+            }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(1, contentMode: .fit)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.kilalaMintBorder, lineWidth: 1)
+            )
+            .shadow(color: Color.kilalaInk.opacity(0.05), radius: 8, x: 0, y: 4)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .onTapGesture {
+                isQRRevealed.toggle()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { _ in
+                        isQRRevealed.toggle()
+                    }
+            )
+
+            // Subtle Interaction Hint & Card Status Badge
+            VStack(spacing: 10) {
+                Text(isQRRevealed ? "Tap or swipe QR code to hide" : "QR code is hidden for your privacy")
+                    .font(.kilala(.caption, weight: .medium))
+                    .foregroundColor(.kilalaInkSecondary)
+
+                KilalaStatusBadge(
+                    icon: statusAppearance.icon,
+                    label: "Status: \(statusAppearance.label)",
+                    foreground: statusAppearance.foreground,
+                    background: statusAppearance.background,
+                    cornerRadius: 8
+                )
+            }
+        }
+        .padding(.vertical, 18)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+        )
+        .shadow(color: Color.kilalaInk.opacity(0.04), radius: 10, x: 0, y: 4)
+    }
+
+    // MARK: - Loading & Error States
+
+    private var loadingStateCard: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .tint(.kilalaGreen)
+
+            Text("Loading Digital ID...")
+                .font(.kilala(.callout))
+                .foregroundColor(.kilalaInkSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+        .padding(.horizontal, 16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+        )
+    }
+
+    private func errorStateCard(message: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundColor(.kilalaStateInvalid)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.kilala(.callout, weight: .bold))
+                .foregroundColor(.kilalaInk)
+                .multilineTextAlignment(.center)
+
+            Button(action: onRetry) {
+                Text("Retry")
+                    .font(.kilala(.subheadline, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .frame(minHeight: 44)
+                    .background(Color.kilalaGreen)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 20)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.kilalaStateInvalid.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Formatting & QR Helpers
+
+    private func classificationBadge(for rawType: String) -> (icon: String, fill: Color, foreground: Color) {
+        switch rawType.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "PWD":
+            return ("figure.roll", Color.kilalaGreen.opacity(0.12), .kilalaGreen)
+        case "SENIOR_CITIZEN":
+            return ("person.crop.circle.badge.checkmark", Color.kilalaSunrise.opacity(0.30), .kilalaInk)
+        default:
+            return ("person.text.rectangle", Color.kilalaMint, .kilalaInk)
+        }
+    }
+
+    private func statusBadgeAppearance(for rawStatus: String) -> (icon: String, label: String, foreground: Color, background: Color) {
+        let normalized = rawStatus.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        switch normalized {
+        case "ACTIVE":
+            return (
+                "checkmark.circle.fill",
+                "ACTIVE",
+                .kilalaStateValid,
+                Color.kilalaStateValid.opacity(0.12)
+            )
+        case "EXPIRED":
+            return (
+                "clock.badge.exclamationmark.fill",
+                "EXPIRED",
+                .kilalaInk,
+                Color.kilalaStateExpired.opacity(0.28)
+            )
+        case "REVOKED", "SUSPENDED":
+            return (
+                "xmark.circle.fill",
+                normalized,
+                .kilalaStateInvalid,
+                Color.kilalaStateInvalid.opacity(0.12)
+            )
+        default:
+            let label = normalized.isEmpty ? "ACTIVE" : normalized
+            return (
+                "checkmark.circle.fill",
+                label,
+                .kilalaStateValid,
+                Color.kilalaStateValid.opacity(0.12)
+            )
+        }
+    }
+
+    /// Formats the cardholder's name with their middle name shortened to a single initial followed by a period
+    /// (e.g., "Juan Santos Dela Cruz" -> "Juan S. Dela Cruz"; omits middle initial if no middle name is set).
+    private func formattedDisplayName(for profile: CardholderProfile) -> String {
+        let trimmedFirst = profile.firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMiddle = (profile.middleName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLast = profile.lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let middleInitial: String? = {
+            guard let firstChar = trimmedMiddle.first(where: { $0.isLetter }) ?? trimmedMiddle.first else {
+                return nil
+            }
+            return "\(String(firstChar).uppercased())."
+        }()
+
+        return [trimmedFirst, middleInitial, trimmedLast]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    /// Masks each word after its first character with "*" while preserving the period on any middle initial
+    /// (e.g., "Juan S. Dela Cruz" -> "J*** S. D*** C***").
     private func maskedFullName(from fullName: String) -> String {
         fullName
             .split(separator: " ")
             .map { word in
                 guard let firstChar = word.first else { return "" }
-                let maskedRest = String(repeating: "*", count: max(0, word.count - 1))
+                let maskedRest = String(
+                    word.dropFirst().map { $0 == "." ? "." : "*" }
+                )
                 return "\(firstChar)\(maskedRest)"
             }
             .joined(separator: " ")

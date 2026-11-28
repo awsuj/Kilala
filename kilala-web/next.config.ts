@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
+// Makes getCloudflareContext() bindings (R2, etc.) available under `next dev`
+// via Miniflare, matching the deployed Worker.
+initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   // The portal is an auth-gated app — every page reads the session cookie at

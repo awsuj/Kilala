@@ -9,5 +9,7 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Kilala needs access to your camera to scan and verify PWD and Senior Citizen QR codes.</string>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

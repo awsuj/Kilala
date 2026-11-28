@@ -1,5 +1,6 @@
 import { apiFetch, ApiError } from "@/lib/api";
 import { getLguIdParam } from "@/lib/city";
+import { getCurrentUser } from "@/lib/session";
 import RecordsView from "./records-view";
 import { toCardRecord, type BackendCardholder } from "./adapter";
 import { getLgus, type Lgu } from "@/lib/lgus";
@@ -20,10 +21,13 @@ interface DashboardAdmin {
 export default async function RecordsPage() {
   const lguParam = await getLguIdParam();
 
-  const [listRes, dashRes, lgusRes] = await Promise.allSettled([
-    apiFetch<BackendCardholder[]>(`/api/lgu/cardholders${lguParam}`),
-    apiFetch<DashboardAdmin>(`/api/lgu/dashboard${lguParam}`),
-    getLgus(),
+  const [[listRes, dashRes, lgusRes], user] = await Promise.all([
+    Promise.allSettled([
+      apiFetch<BackendCardholder[]>(`/api/lgu/cardholders${lguParam}`),
+      apiFetch<DashboardAdmin>(`/api/lgu/dashboard${lguParam}`),
+      getLgus(),
+    ]),
+    getCurrentUser(),
   ]);
 
   if (listRes.status === "rejected") {
@@ -52,5 +56,7 @@ export default async function RecordsPage() {
   const rows = listRes.value.map((r) => toCardRecord(r, lguName));
   const lgus: Lgu[] = lgusRes.status === "fulfilled" ? lgusRes.value : [];
 
-  return <RecordsView initialRows={rows} lgus={lgus} />;
+  return (
+    <RecordsView initialRows={rows} lgus={lgus} role={user?.role ?? null} />
+  );
 }
