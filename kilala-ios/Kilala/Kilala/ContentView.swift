@@ -7,42 +7,45 @@
 
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
-    @State private var session: LoginResponse? = nil
-    
+    @ObservedObject var sessionManager: SessionManager
+
+    init(sessionManager: SessionManager = .shared) {
+        self.sessionManager = sessionManager
+    }
+
     var body: some View {
-        if let session = session {
-            switch session.user.role {
-            case .cardholder:
-                CardholderDashboardView(token: session.token) {
-                    APIService.shared.authToken = nil
-                    APIService.shared.currentUserEmail = nil
-                    self.session = nil
-                }
-            case .business:
-                BusinessDashboardView(token: session.token, userEmail: session.user.email) {
-                    APIService.shared.authToken = nil
-                    APIService.shared.currentUserEmail = nil
-                    APIService.shared.currentBusinessProfile = nil
-                    self.session = nil
-                }
-            case .lguAdmin, .superAdmin:
-                VStack(spacing: 16) {
-                    Text("Please use the Kilala Web Portal for LGU Admin access.")
-                        .foregroundColor(.kilalaInk)
-                        .multilineTextAlignment(.center)
-                    Button("Logout") {
-                        APIService.shared.authToken = nil
-                        APIService.shared.currentUserEmail = nil
-                        self.session = nil
+        Group {
+            if let session = sessionManager.session {
+                switch session.user.role {
+                case .cardholder:
+                    CardholderDashboardView(token: session.token) {
+                        sessionManager.logout()
                     }
+                case .business:
+                    BusinessDashboardView(token: session.token, userEmail: session.user.email) {
+                        sessionManager.logout()
+                    }
+                case .lguAdmin, .superAdmin:
+                    VStack(spacing: 16) {
+                        Text("Please use the Kilala Web Portal for LGU Admin access.")
+                            .foregroundColor(.kilalaInk)
+                            .multilineTextAlignment(.center)
+                        Button("Logout") {
+                            sessionManager.logout()
+                        }
+                    }
+                    .padding()
                 }
-                .padding()
+            } else {
+                LoginView { loginResponse in
+                    sessionManager.saveSession(loginResponse)
+                }
             }
-        } else {
-            LoginView { loginResponse in
-                self.session = loginResponse
-            }
+        }
+        .task {
+            await sessionManager.refreshRestoredSessionIfNeeded()
         }
     }
 }

@@ -398,7 +398,7 @@ struct CreateAccountView: View {
         )) {
             if let session = standaloneSession {
                 CardholderDashboardView(token: session.token) {
-                    APIService.shared.authToken = nil
+                    SessionManager.shared.logout()
                     standaloneSession = nil
                 }
             }
@@ -509,6 +509,7 @@ struct CreateAccountView: View {
                     if let onRegistrationSuccess = onRegistrationSuccess {
                         onRegistrationSuccess(response)
                     } else {
+                        SessionManager.shared.saveSession(response)
                         self.standaloneSession = response
                     }
                 }

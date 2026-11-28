@@ -43,7 +43,7 @@ struct CardholderDashboardView: View {
     }
 
     @State private var selectedTab: Tab = .home
-    @State private var profile: CardholderProfile? = nil
+    @State private var profile: CardholderProfile? = APIService.shared.currentCardholderProfile
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
     @State private var isQRRevealed: Bool = false
@@ -106,12 +106,12 @@ struct CardholderDashboardView: View {
     }
 
     private func loadProfile(force: Bool) async {
-        if !force && profile != nil {
-            return
-        }
-
         let activeToken = token.isEmpty ? (APIService.shared.authToken ?? "") : token
-        isLoading = true
+        let hasCachedProfile = profile != nil
+
+        if !hasCachedProfile || force {
+            isLoading = true
+        }
         errorMessage = nil
 
         do {
@@ -121,7 +121,9 @@ struct CardholderDashboardView: View {
         } catch is CancellationError {
             // Task cancelled
         } catch {
-            errorMessage = "Could not load Digital ID."
+            if !hasCachedProfile {
+                errorMessage = "Could not load Digital ID."
+            }
             isLoading = false
         }
     }

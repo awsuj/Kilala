@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct KilalaApp: App {
+    @StateObject private var sessionManager = SessionManager.shared
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(sessionManager: sessionManager)
                 .preferredColorScheme(.light)
         }
     }

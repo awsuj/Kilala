@@ -78,6 +78,26 @@ class APIService {
     var currentCardholderProfile: CardholderProfile?
     
     private init() {} // Prevent multiple instances
+
+    private func handleSessionUnauthorizedIfNeeded(statusCode: Int, data: Data) {
+        let isUnauthorized: Bool
+        if statusCode == 401 {
+            isUnauthorized = true
+        } else if statusCode == 403 {
+            let backendError = (try? JSONDecoder().decode(BackendErrorBody.self, from: data))?.error.lowercased() ?? ""
+            isUnauthorized = backendError.contains("invalid or expired token")
+                || backendError.contains("expired token")
+                || backendError.contains("invalid token")
+        } else {
+            isUnauthorized = false
+        }
+
+        if isUnauthorized {
+            Task { @MainActor in
+                SessionManager.shared.handleUnauthorized()
+            }
+        }
+    }
     
     func login(email: String, password: String) async throws -> LoginResponse {
         guard let url = URL(string: "\(baseURL)/auth/login") else {
@@ -127,8 +147,11 @@ class APIService {
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             throw URLError(.badServerResponse)
         }
         
@@ -138,6 +161,9 @@ class APIService {
         self.currentCardholderProfile = profile
         if let profileEmail = profile.email, !profileEmail.isEmpty {
             self.currentUserEmail = profileEmail
+        }
+        Task { @MainActor in
+            SessionManager.shared.updateCachedCardholderProfile(profile)
         }
         return profile
     }
@@ -172,6 +198,7 @@ class APIService {
         }
         
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             throw URLError(.badServerResponse)
         }
         
@@ -417,6 +444,7 @@ class APIService {
         }
         
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             throw URLError(.badServerResponse)
         }
         
@@ -562,6 +590,9 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            if let httpResponse = response as? HTTPURLResponse {
+                handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
+            }
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to record transaction. Please try again."
@@ -612,6 +643,9 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            if let httpResponse = response as? HTTPURLResponse {
+                handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
+            }
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to fetch business transactions."
@@ -670,6 +704,9 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            if let httpResponse = response as? HTTPURLResponse {
+                handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
+            }
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to fetch cardholder transactions."
@@ -699,6 +736,9 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            if let httpResponse = response as? HTTPURLResponse {
+                handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
+            }
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to fetch business dashboard metrics."
@@ -726,6 +766,9 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            if let httpResponse = response as? HTTPURLResponse {
+                handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
+            }
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to fetch business profile."
@@ -736,6 +779,9 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let profile = try decoder.decode(BusinessProfile.self, from: data)
         self.currentBusinessProfile = profile
+        Task { @MainActor in
+            SessionManager.shared.updateCachedBusinessProfile(profile)
+        }
         return profile
     }
 
@@ -763,6 +809,9 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            if let httpResponse = response as? HTTPURLResponse {
+                handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
+            }
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to update business profile. Please try again."
@@ -773,6 +822,9 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let updatedProfile = try decoder.decode(BusinessProfile.self, from: data)
         self.currentBusinessProfile = updatedProfile
+        Task { @MainActor in
+            SessionManager.shared.updateCachedBusinessProfile(updatedProfile)
+        }
         return updatedProfile
     }
 
@@ -836,6 +888,7 @@ class APIService {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to update cardholder profile. Please try again."
@@ -846,10 +899,21 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let updatedProfile = try decoder.decode(CardholderProfile.self, from: data)
         self.currentCardholderProfile = updatedProfile
+        let resolvedEmail: String?
         if let verifiedEmail = updatedProfile.email, !verifiedEmail.isEmpty {
             self.currentUserEmail = verifiedEmail
+            resolvedEmail = verifiedEmail
         } else if updatedProfile.requiresEmailVerification != true {
             self.currentUserEmail = trimmedEmail
+            resolvedEmail = trimmedEmail
+        } else {
+            resolvedEmail = nil
+        }
+        Task { @MainActor in
+            SessionManager.shared.updateCachedCardholderProfile(updatedProfile)
+            if let resolvedEmail {
+                SessionManager.shared.updateUserEmail(resolvedEmail)
+            }
         }
         return updatedProfile
     }
@@ -904,6 +968,7 @@ class APIService {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to verify email change. Please try again."
@@ -914,7 +979,12 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let verifiedProfile = try decoder.decode(CardholderProfile.self, from: data)
         self.currentCardholderProfile = verifiedProfile
-        self.currentUserEmail = verifiedProfile.email ?? trimmedEmail
+        let verifiedEmail = verifiedProfile.email ?? trimmedEmail
+        self.currentUserEmail = verifiedEmail
+        Task { @MainActor in
+            SessionManager.shared.updateCachedCardholderProfile(verifiedProfile)
+            SessionManager.shared.updateUserEmail(verifiedEmail)
+        }
         return verifiedProfile
     }
 
@@ -965,6 +1035,7 @@ class APIService {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Failed to send verification code. Please try again."
@@ -1042,6 +1113,7 @@ class APIService {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Failed to send verification code. Please try again."
@@ -1099,6 +1171,7 @@ class APIService {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            handleSessionUnauthorizedIfNeeded(statusCode: httpResponse.statusCode, data: data)
             let backendError = try? JSONDecoder().decode(BackendErrorBody.self, from: data)
             throw APIError.serverError(
                 backendError?.error ?? "Unable to verify email change. Please try again."
@@ -1111,12 +1184,19 @@ class APIService {
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        if let updatedProfile = try? decoder.decode(BusinessProfile.self, from: data) {
+        let updatedProfile = try? decoder.decode(BusinessProfile.self, from: data)
+        if let updatedProfile {
             self.currentBusinessProfile = updatedProfile
         }
         let decoded = try? decoder.decode(VerifyBusinessEmailResponse.self, from: data)
         let verifiedEmail = (decoded?.email?.isEmpty == false ? decoded?.email : nil) ?? trimmedEmail
         self.currentUserEmail = verifiedEmail
+        Task { @MainActor in
+            if let updatedProfile {
+                SessionManager.shared.updateCachedBusinessProfile(updatedProfile)
+            }
+            SessionManager.shared.updateUserEmail(verifiedEmail)
+        }
         return verifiedEmail
     }
 
