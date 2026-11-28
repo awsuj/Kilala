@@ -4,6 +4,8 @@ const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5001";
 const ADMIN_EMAIL = "admin@makati.gov.ph";
 const ADMIN_PASSWORD = "MockHashForTestingOnly123456789012";
+const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL ?? "superadmin@kilala.gov.ph";
+const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD ?? "Kilala2026";
 
 interface LoginResponse {
   token: string;
@@ -42,6 +44,23 @@ async function loginAsAdmin(request: APIRequestContext, page: Page) {
   return token;
 }
 
+async function loginAsSuperadmin(request: APIRequestContext, page: Page) {
+  const response = await request.post(`${API_BASE_URL}/api/auth/login`, {
+    data: { email: SUPERADMIN_EMAIL, password: SUPERADMIN_PASSWORD },
+  });
+  expect(response.status()).toBe(200);
+
+  const { token, user } = (await response.json()) as LoginResponse;
+  expect(user.role).toBe("SUPERADMIN");
+  await page.context().addCookies([
+    {
+      name: process.env.AUTH_COOKIE || "kilala_token",
+      value: token,
+      url: WEB_BASE_URL,
+    },
+  ]);
+}
+
 async function getCardholders(
   request: APIRequestContext,
   token: string,
@@ -75,7 +94,7 @@ function recordRow(page: Page, id: string) {
 
 function cardholderName(cardholder: Cardholder) {
   const middleInitial = cardholder.middle_name
-    ? ` ${cardholder.middle_name[0]}.`
+    ? ` ${cardholder.middle_name[0].toUpperCase()}.`
     : "";
   return `${cardholder.last_name}, ${cardholder.first_name}${middleInitial}`;
 }
@@ -214,7 +233,7 @@ test.describe("LGU records page", () => {
     page,
     request,
   }) => {
-    await loginAsAdmin(request, page);
+    await loginAsSuperadmin(request, page);
     await page.goto("/dashboard/records");
     await page.getByRole("button", { name: "+ Add Record" }).click();
     const dialog = page.getByRole("dialog");
