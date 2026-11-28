@@ -189,7 +189,11 @@ struct CardholderTransactionHistoryView: View {
                 .foregroundColor(.kilalaInkSecondary)
                 .accessibilityHidden(true)
 
-            TextField("Search by merchant name", text: $searchText)
+            TextField(
+                "Search by merchant name",
+                text: $searchText,
+                prompt: Text("Search by merchant name").foregroundStyle(Color.kilalaInk.opacity(0.4))
+            )
                 .font(.kilala(.callout))
                 .foregroundColor(.kilalaInk)
                 .tint(.kilalaGreen)
@@ -627,19 +631,6 @@ struct CardholderTransactionDetailSheet: View {
                 ScrollView(showsIndicators: false) {
                     // Single Flat White 16pt Audit Card (No Nested Cards)
                     VStack(alignment: .leading, spacing: 16) {
-                        // Verification Status Header (Icon + Word + Brand State Color)
-                        HStack {
-                            KilalaStatusBadge(
-                                icon: "checkmark.seal.fill",
-                                label: "Verified",
-                                foreground: .kilalaStateValid,
-                                background: Color.kilalaStateValid.opacity(0.12),
-                                cornerRadius: 8
-                            )
-
-                            Spacer()
-                        }
-
                         // Merchant Identity
                         VStack(alignment: .leading, spacing: 4) {
                             Text("MERCHANT")

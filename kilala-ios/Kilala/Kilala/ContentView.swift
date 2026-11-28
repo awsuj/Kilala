@@ -29,6 +29,7 @@ struct ContentView: View {
             case .lguAdmin, .superAdmin:
                 VStack(spacing: 16) {
                     Text("Please use the Kilala Web Portal for LGU Admin access.")
+                        .foregroundColor(.kilalaInk)
                         .multilineTextAlignment(.center)
                     Button("Logout") {
                         APIService.shared.authToken = nil

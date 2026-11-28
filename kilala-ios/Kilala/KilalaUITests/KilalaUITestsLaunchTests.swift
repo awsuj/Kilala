@@ -45,8 +45,11 @@ final class KilalaUITestsLaunchTests: XCTestCase {
     func testLaunchCardholderSignup() throws {
         let app = launchApp()
 
-        // Navigate to the cardholder signup screen.
-        app.buttons[UIText.createAccount].tap()
+        // Navigate to the cardholder signup screen. In landscape the link is below the
+        // visible part of the login screen, so scroll to it first.
+        let signupLink = app.buttons[UIText.createAccount]
+        scrollIntoView(signupLink, in: app)
+        signupLink.tap()
         XCTAssertTrue(app.buttons[UIText.verifyRecord].waitForExistence(timeout: 5))
 
         attachScreenshot(app, named: "Cardholder Signup")
@@ -60,9 +63,9 @@ final class KilalaUITestsLaunchTests: XCTestCase {
         // Log into the seeded PWD test account and wait for the ID details to load.
         logIn(app, email: UITestAccounts.cardholderPWD, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.cardholderHome].waitForExistence(timeout: 15))
-        let cardNumber = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "MKT-PWD-2026-00481")).firstMatch
-        XCTAssertTrue(cardNumber.waitForExistence(timeout: 10), "Digital ID details did not load")
+        XCTAssertTrue(app.staticTexts[UIText.cardholderHome].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[UITestAccounts.juanCardNumber].waitForExistence(timeout: 10),
+                      "Digital ID details did not load")
 
         attachScreenshot(app, named: "Cardholder Digital ID")
     }
@@ -72,10 +75,10 @@ final class KilalaUITestsLaunchTests: XCTestCase {
         try requireBackend()
         let app = launchApp()
 
-        // Log into the seeded business test account (lands on the Business Dashboard since PR #35).
+        // Log into the seeded business test account (lands on the dashboard's Home tab).
         logIn(app, email: UITestAccounts.business, password: UITestAccounts.password)
         dismissSavePasswordPromptIfShown(app)
-        XCTAssertTrue(app.navigationBars[UIText.businessHome].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[UIText.businessHome].waitForExistence(timeout: 15))
 
         attachScreenshot(app, named: "Business Dashboard")
     }

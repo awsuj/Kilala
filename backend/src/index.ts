@@ -173,23 +173,46 @@ app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
         last_name,
         date_of_birth
     } = req.body;
+
+    const normalizeField = (value: unknown): string =>
+        typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+
+    const normalizedPrivilegeType = normalizeField(privilege_type).toUpperCase();
+    const normalizedCardIdNumber = normalizeField(card_id_number);
+    const normalizedFirstName = normalizeField(first_name);
+    const normalizedMiddleName = normalizeField(middle_name);
+    const normalizedLastName = normalizeField(last_name);
+    const normalizedDateOfBirth = normalizeField(date_of_birth);
     
-    if (!privilege_type || !card_id_number || !first_name || !last_name || !date_of_birth) {
+    if (
+        !normalizedPrivilegeType ||
+        !normalizedCardIdNumber ||
+        !normalizedFirstName ||
+        !normalizedLastName ||
+        !normalizedDateOfBirth
+    ) {
         return res.status(400).json({ error: 'All fields are required for verification' });
     }
     
     try {
-        // Check if a record matches the provided details
+        // Check if a record matches the provided details (trimmed & case-insensitive)
         const profileRes = await pool.query(
-            `SELECT id, user_id, first_name, last_name, status 
+            `SELECT id, user_id, first_name, middle_name, last_name, status 
             FROM cardholder_profiles 
-            WHERE lgu_id_number = $1 
-                AND privilege_type = $2 
+            WHERE LOWER(REGEXP_REPLACE(TRIM(lgu_id_number), '\\s+', ' ', 'g')) = LOWER($1) 
+                AND UPPER(TRIM(privilege_type::text)) = UPPER($2) 
                 AND date_of_birth = $3 
-                AND first_name ILIKE $4 
-                AND last_name ILIKE $5
-                AND COALESCE(middle_name, '') ILIKE $6`,
-            [card_id_number, privilege_type, date_of_birth, first_name, last_name, middle_name || '' ]
+                AND LOWER(REGEXP_REPLACE(TRIM(first_name), '\\s+', ' ', 'g')) = LOWER($4) 
+                AND LOWER(REGEXP_REPLACE(TRIM(last_name), '\\s+', ' ', 'g')) = LOWER($5)
+                AND LOWER(REGEXP_REPLACE(TRIM(COALESCE(middle_name, '')), '\\s+', ' ', 'g')) = LOWER($6)`,
+            [
+                normalizedCardIdNumber,
+                normalizedPrivilegeType,
+                normalizedDateOfBirth,
+                normalizedFirstName,
+                normalizedLastName,
+                normalizedMiddleName
+            ]
         );
         
         if (profileRes.rows.length === 0) {
@@ -208,12 +231,12 @@ app.post('/api/auth/verify-record', async (req: Request, res: Response) => {
             return res.status(409).json({ error: 'This ID has already been claimed by an existing account.' });
         }
         
-        // Success
+        // Success — preserve properly capitalized name from the matched database record
         res.status(200).json({
             message: 'Record verified successfully',
             profile_id: profile.id,
             first_name: profile.first_name,
-            middle_name: profile.middle_name,
+            middle_name: profile.middle_name ?? null,
             last_name: profile.last_name
         });
     } catch (error) {
@@ -515,6 +538,319 @@ app.post('/api/auth/register-business', async (req: Request, res: Response) => {
   }
 });
 
+// 2.3.1 Verify Pre-Accredited Business Record (Business Claiming Step 1)
+const isPlaceholderUnclaimedUser = (userEmail: unknown, userIsActive: unknown): boolean =>
+  userIsActive === false &&
+  typeof userEmail === 'string' &&
+  userEmail.toLowerCase().endsWith('@unclaimed.kilala');
+
+const handleVerifyBusinessRecord = async (req: Request, res: Response) => {
+  const rawBusinessName = req.body.businessName ?? req.body.business_name;
+  const rawLgu = req.body.lgu ?? req.body.lgu_name ?? req.body.issuing_lgu;
+  const rawLguId = req.body.lguId ?? req.body.lgu_id;
+  const rawTin = req.body.tin ?? req.body.tin_number ?? req.body.tinNumber;
+  const rawPermitNo =
+    req.body.permitNumber ??
+    req.body.permit_number ??
+    req.body.businessPermitNo ??
+    req.body.business_permit_no;
+
+  const normalizedName =
+    typeof rawBusinessName === 'string'
+      ? rawBusinessName.trim().replace(/\s+/g, ' ')
+      : '';
+  const normalizedLgu =
+    typeof rawLgu === 'string' ? rawLgu.trim().replace(/\s+/g, ' ') : '';
+  const normalizedLguId =
+    typeof rawLguId === 'string' && rawLguId.trim() ? rawLguId.trim() : null;
+  const normalizedTin =
+    typeof rawTin === 'string' ? rawTin.replace(/[\s-]+/g, '').toUpperCase() : '';
+  const normalizedPermitNo =
+    typeof rawPermitNo === 'string'
+      ? rawPermitNo.trim().replace(/\s+/g, ' ')
+      : '';
+
+  if (!normalizedName || (!normalizedLgu && !normalizedLguId) || !normalizedTin || !normalizedPermitNo) {
+    return res.status(400).json({
+      error: 'Business name, issuing LGU, TIN, and business permit number are required for verification'
+    });
+  }
+
+  try {
+    const params: any[] = [normalizedName, normalizedTin, normalizedPermitNo];
+    let lguClause = '';
+
+    if (normalizedLguId) {
+      params.push(normalizedLguId);
+      lguClause = `AND bp.lgu_id = $${params.length}`;
+    } else {
+      params.push(normalizedLgu);
+      lguClause = `AND (
+        LOWER(REGEXP_REPLACE(TRIM(l.municipality_name), '\\s+', ' ', 'g')) = LOWER($${params.length})
+        OR LOWER(TRIM(l.lgu_code)) = LOWER($${params.length})
+      )`;
+    }
+
+    const bizRes = await pool.query(
+      `SELECT bp.id,
+              bp.user_id,
+              bp.lgu_id,
+              bp.business_name,
+              bp.branch_name,
+              bp.category,
+              bp.business_permit_no,
+              bp.tin_number,
+              bp.address,
+              bp.is_accredited,
+              l.municipality_name AS lgu_name,
+              l.lgu_code,
+              u.email AS user_email,
+              u.is_active AS user_is_active
+       FROM business_profiles bp
+       JOIN lgus l ON l.id = bp.lgu_id
+       LEFT JOIN users u ON u.id = bp.user_id
+       WHERE LOWER(REGEXP_REPLACE(TRIM(bp.business_name), '\\s+', ' ', 'g')) = LOWER($1)
+         AND UPPER(REGEXP_REPLACE(bp.tin_number, '[\\s-]+', '', 'g')) = $2
+         AND LOWER(REGEXP_REPLACE(TRIM(bp.business_permit_no), '\\s+', ' ', 'g')) = LOWER($3)
+         ${lguClause}
+       LIMIT 1`,
+      params
+    );
+
+    if (bizRes.rows.length === 0) {
+      return res.status(404).json({
+        error: 'No matching accredited business record found. Please check your details.'
+      });
+    }
+
+    const business = bizRes.rows[0];
+
+    if (!business.is_accredited) {
+      return res.status(403).json({
+        error: 'This business accreditation is currently inactive. Please contact your LGU.'
+      });
+    }
+
+    const isUnclaimed =
+      !business.user_id ||
+      isPlaceholderUnclaimedUser(business.user_email, business.user_is_active);
+
+    if (!isUnclaimed) {
+      return res.status(409).json({
+        error: 'This business record has already been claimed by an existing account.'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Business record verified successfully',
+      business_id: business.id,
+      lgu_id: business.lgu_id,
+      lgu_name: business.lgu_name,
+      lgu_code: business.lgu_code,
+      business_name: business.business_name,
+      branch_name: business.branch_name,
+      category: business.category,
+      business_permit_no: business.business_permit_no,
+      tin_number: business.tin_number,
+      address: business.address,
+      is_accredited: business.is_accredited
+    });
+  } catch (error) {
+    console.error('Verify business record error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+app.post('/api/auth/business/verify', handleVerifyBusinessRecord);
+app.post('/api/businesses/lookup', handleVerifyBusinessRecord);
+
+// 2.3.2 Claim Pre-Accredited Business Account (after OTP verification)
+app.post('/api/auth/claim-business', async (req: Request, res: Response) => {
+  const businessId = req.body.business_id ?? req.body.businessId;
+  const email = req.body.email;
+  const password = req.body.password;
+  const rawBranchName = req.body.branch_name ?? req.body.branchName ?? req.body.branch;
+  const rawCategory = req.body.category;
+  const rawPermitNo =
+    req.body.business_permit_no ?? req.body.businessPermitNo ?? req.body.permit_number;
+  const rawAddress = req.body.address;
+
+  if (!businessId || !email || !password) {
+    return res.status(400).json({
+      error: 'business_id, email, and password are required to claim your business account'
+    });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const branchNameValue =
+    rawBranchName === undefined
+      ? undefined
+      : typeof rawBranchName === 'string'
+      ? rawBranchName.trim() || null
+      : null;
+  const categoryValue =
+    typeof rawCategory === 'string' && rawCategory.trim() !== ''
+      ? rawCategory.trim().toUpperCase()
+      : undefined;
+  const permitNoValue =
+    typeof rawPermitNo === 'string' && rawPermitNo.trim() !== ''
+      ? rawPermitNo.trim()
+      : undefined;
+  const addressValue =
+    typeof rawAddress === 'string' && rawAddress.trim() !== ''
+      ? rawAddress.trim()
+      : undefined;
+
+  const client = await pool.connect();
+  try {
+    await ensureOtpTable();
+
+    if (categoryValue) {
+      const allowed = await client.query(
+        'SELECT unnest(enum_range(NULL::business_category))::text AS value'
+      );
+      const allowedCategories: string[] = allowed.rows.map((row: { value: string }) => row.value);
+      if (!allowedCategories.includes(categoryValue)) {
+        return res.status(400).json({
+          error: `Invalid category. Choose one of: ${allowedCategories.join(', ')}`
+        });
+      }
+    }
+
+    await client.query('BEGIN');
+
+    // Enforce verified email OTP before finalizing business account creation
+    const otpVerificationRes = await client.query(
+      `SELECT id FROM otp_verifications
+       WHERE LOWER(email) = $1
+         AND verified = TRUE
+         AND expires_at > NOW() - INTERVAL '30 minutes'
+       ORDER BY expires_at DESC
+       LIMIT 1`,
+      [normalizedEmail]
+    );
+
+    if (otpVerificationRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'Your email must be verified via OTP before claiming your business account.'
+      });
+    }
+
+    const bizRes = await client.query(
+      'SELECT * FROM business_profiles WHERE id = $1 FOR UPDATE',
+      [businessId]
+    );
+
+    if (bizRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No matching accredited business record found.' });
+    }
+
+    const business = bizRes.rows[0];
+
+    if (!business.is_accredited) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'This business accreditation is currently inactive. Please contact your LGU.'
+      });
+    }
+
+    let existingPlaceholderUserId: string | null = null;
+    if (business.user_id) {
+      const existingUserRes = await client.query(
+        'SELECT id, email, is_active FROM users WHERE id = $1 FOR UPDATE',
+        [business.user_id]
+      );
+      const existingUser = existingUserRes.rows[0];
+      if (
+        existingUser &&
+        isPlaceholderUnclaimedUser(existingUser.email, existingUser.is_active)
+      ) {
+        existingPlaceholderUserId = existingUser.id;
+      } else {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'This business record has already been claimed by an account.'
+        });
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const userRes = existingPlaceholderUserId
+      ? await client.query(
+          `UPDATE users
+           SET email = $1,
+               password_hash = $2,
+               is_active = TRUE,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $3
+           RETURNING id, email, role`,
+          [normalizedEmail, passwordHash, existingPlaceholderUserId]
+        )
+      : await client.query(
+          `INSERT INTO users (email, password_hash, role)
+           VALUES ($1, $2, 'BUSINESS')
+           RETURNING id, email, role`,
+          [normalizedEmail, passwordHash]
+        );
+
+    const newUser = userRes.rows[0];
+
+    const updatedBizRes = await client.query(
+      `UPDATE business_profiles bp
+       SET user_id = $1,
+           branch_name = CASE WHEN $2::boolean THEN $3 ELSE bp.branch_name END,
+           category = COALESCE($4::business_category, bp.category),
+           business_permit_no = COALESCE($5, bp.business_permit_no),
+           address = COALESCE($6, bp.address),
+           updated_at = CURRENT_TIMESTAMP
+       FROM lgus l
+       WHERE bp.id = $7
+         AND l.id = bp.lgu_id
+       RETURNING bp.*, l.municipality_name AS lgu_name`,
+      [
+        newUser.id,
+        branchNameValue !== undefined,
+        branchNameValue ?? null,
+        categoryValue ?? null,
+        permitNoValue ?? null,
+        addressValue ?? null,
+        business.id
+      ]
+    );
+
+    await client.query(
+      'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+      [normalizedEmail]
+    );
+
+    await client.query('COMMIT');
+
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, role: newUser.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    return res.status(201).json({
+      message: 'Business account claimed successfully',
+      token,
+      user: newUser,
+      businessProfile: updatedBizRes.rows[0]
+    });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Email or Business Permit No. is already in use' });
+    }
+    console.error('Claim business error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // 2.4 Change Password (Shared by Cardholder, Business, and LGU Admin)
 app.post(
   '/api/auth/change-password',
@@ -614,6 +950,7 @@ const handleGetCardholderProfile = async (req: AuthRequest, res: Response) => {
               l.municipality_name AS issuing_lgu,
               l.lgu_code,
               cp.issued_date AS issue_date,
+              cp.expiry_date AS expiry_date,
               cp.emergency_contact_phone AS emergency_contact_number,
               cp.photo_url AS profile_photo_url,
               u.email
@@ -628,7 +965,11 @@ const handleGetCardholderProfile = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Cardholder profile not found' });
     }
 
-    res.status(200).json(result.rows[0]);
+    const row = result.rows[0];
+    res.status(200).json({
+      ...row,
+      expiry_date: row.expiry_date ?? null
+    });
   } catch (error) {
     console.error('Error fetching cardholder profile:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -781,6 +1122,7 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
               l.municipality_name AS issuing_lgu,
               l.lgu_code,
               cp.issued_date AS issue_date,
+              cp.expiry_date AS expiry_date,
               cp.emergency_contact_phone AS emergency_contact_number,
               cp.photo_url AS profile_photo_url,
               u.email
@@ -792,6 +1134,8 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
     );
 
     await client.query('COMMIT');
+
+    const updatedRow = updatedResult.rows[0];
 
     if (isEmailChanged && emailValue) {
       try {
@@ -805,14 +1149,16 @@ const handleUpdateCardholderProfile = async (req: AuthRequest, res: Response) =>
       }
 
       return res.status(200).json({
-        ...updatedResult.rows[0],
+        ...updatedRow,
+        expiry_date: updatedRow.expiry_date ?? null,
         requires_email_verification: true,
         pending_email: emailValue
       });
     }
 
     res.status(200).json({
-      ...updatedResult.rows[0],
+      ...updatedRow,
+      expiry_date: updatedRow.expiry_date ?? null,
       requires_email_verification: false,
       pending_email: null
     });
@@ -922,6 +1268,7 @@ app.post(
                 l.municipality_name AS issuing_lgu,
                 l.lgu_code,
                 cp.issued_date AS issue_date,
+                cp.expiry_date AS expiry_date,
                 cp.emergency_contact_phone AS emergency_contact_number,
                 cp.photo_url AS profile_photo_url,
                 u.email
@@ -939,8 +1286,10 @@ app.post(
 
       await client.query('COMMIT');
 
+      const verifiedRow = updatedResult.rows[0];
       res.status(200).json({
-        ...updatedResult.rows[0],
+        ...verifiedRow,
+        expiry_date: verifiedRow.expiry_date ?? null,
         requires_email_verification: false,
         pending_email: null
       });
@@ -1206,6 +1555,118 @@ app.put(
     } catch (error) {
       console.error('Error updating business profile:', error);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// 4.1.2 Request / Resend Email Change OTP for Business Account
+app.post(
+  '/api/business/request-email-change-otp',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  handleResendEmailChangeOtp
+);
+
+app.post(
+  '/api/business/resend-email-change-otp',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  handleResendEmailChangeOtp
+);
+
+// 4.1.3 Verify Email Change OTP and Update Business Account Email
+app.post(
+  '/api/business/verify-email-change',
+  authenticateToken,
+  requireRole(['BUSINESS']),
+  async (req: AuthRequest, res: Response) => {
+    const userId = req.user!.id;
+    const rawTargetEmail =
+      req.body.pending_email !== undefined
+        ? req.body.pending_email
+        : req.body.new_email !== undefined
+        ? req.body.new_email
+        : req.body.email;
+    const rawOtp = req.body.otp;
+
+    if (!rawTargetEmail || !rawOtp) {
+      return res.status(400).json({ error: 'New email address and OTP are required' });
+    }
+
+    const normalizedEmail = String(rawTargetEmail).trim().toLowerCase();
+    const trimmedOtp = String(rawOtp).trim();
+
+    if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await ensureOtpTable();
+      await client.query('BEGIN');
+
+      const otpRes = await client.query(
+        `SELECT id FROM otp_verifications
+         WHERE LOWER(email) = $1
+           AND otp = $2
+           AND verified = FALSE
+           AND expires_at > NOW()
+         ORDER BY expires_at DESC
+         LIMIT 1`,
+        [normalizedEmail, trimmedOtp]
+      );
+
+      if (otpRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid or Expired OTP' });
+      }
+
+      const existingUser = await client.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [normalizedEmail, userId]
+      );
+
+      if (existingUser.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+
+      await client.query(
+        'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [normalizedEmail, userId]
+      );
+
+      await client.query(
+        'DELETE FROM otp_verifications WHERE LOWER(email) = $1',
+        [normalizedEmail]
+      );
+
+      const updatedResult = await client.query(
+        `SELECT bp.*, l.municipality_name AS lgu_name, u.email
+         FROM business_profiles bp
+         JOIN lgus l ON l.id = bp.lgu_id
+         LEFT JOIN users u ON u.id = bp.user_id
+         WHERE bp.user_id = $1`,
+        [userId]
+      );
+
+      await client.query('COMMIT');
+
+      res.status(200).json({
+        ...(updatedResult.rows[0] || {}),
+        email: normalizedEmail,
+        requires_email_verification: false,
+        pending_email: null
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Email is already in use by another account' });
+      }
+      console.error('Verify business email change OTP error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
     }
   }
 );
@@ -2217,6 +2678,81 @@ app.get(
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+);
+
+// 5.9 Change the logged-in admin's own password
+app.patch(
+  "/api/lgu/me/password",
+  authenticateToken,
+  requireRole(["LGU_ADMIN", "SUPERADMIN"]),
+  async (req: AuthRequest, res: Response) => {
+    const { currentPassword, newPassword } = req.body ?? {};
+
+    if (
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string" ||
+      !currentPassword ||
+      !newPassword
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Current and new password are required" });
+    }
+    if (newPassword.length < 8) {
+      return res
+        .status(400)
+        .json({ error: "New password must be at least 8 characters" });
+    }
+    if (Buffer.byteLength(newPassword, "utf8") > 72) {
+      // bcrypt only reads the first 72 bytes, so reject longer ones
+      return res
+        .status(400)
+        .json({ error: "New password must be at most 72 bytes" });
+    }
+    if (newPassword === currentPassword) {
+      return res
+        .status(400)
+        .json({ error: "New password must be different from the current one" });
+    }
+
+    try {
+      // The id comes from the verified token, never from the request body.
+      const result = await pool.query(
+        "SELECT password_hash FROM users WHERE id = $1",
+        [req.user!.id],
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      const storedHash: string = result.rows[0].password_hash;
+
+      // Same test-account shortcut the login route uses.
+      let isValidPassword = false;
+      if (storedHash === "$2b$10$MockHashForTestingOnly123456789012") {
+        isValidPassword =
+          currentPassword === "MockHashForTestingOnly123456789012";
+      } else {
+        isValidPassword = await bcrypt.compare(currentPassword, storedHash);
+      }
+
+      if (!isValidPassword) {
+        // 400, not 401, so the web portal doesn't mistake this for an expired session.
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+
+      const newHash = await bcrypt.hash(newPassword, 10);
+      await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [
+        newHash,
+        req.user!.id,
+      ]);
+
+      res.status(200).json({ message: "Password updated" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
 );
 
 // ============================================================================

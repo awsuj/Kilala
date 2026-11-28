@@ -18,6 +18,7 @@ const TITLES: Record<string, string> = {
   "/dashboard/businesses": "Businesses",
   "/dashboard/reports": "Reports",
   "/dashboard/accounts": "Accounts",
+  "/dashboard/settings": "Settings",
 };
 
 function titleFor(pathname: string): string {
@@ -65,10 +66,7 @@ export default function TopBar({ role, lgus = [], selectedCity }: Props) {
             value={selectedCity ?? ALL_CITIES}
             onValueChange={handleCityChange}
           >
-            <SelectTrigger
-              className="w-48"
-              aria-label="City"
-            >
+            <SelectTrigger className="w-48" aria-label="City">
               <SelectValue placeholder="All cities" />
             </SelectTrigger>
             <SelectContent>

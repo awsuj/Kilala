@@ -7,12 +7,20 @@
 
 import SwiftUI
 
+enum TransactionAmountDisplayMode: String, CaseIterable, Identifiable {
+    case discountGiven = "Discount Given"
+    case netIncome = "Net Income"
+
+    var id: String { rawValue }
+}
+
 struct BusinessTransactionHistoryView: View {
     var onLogout: (() -> Void)? = nil
     var showBrandLogo: Bool = false
 
     @State private var transactions: [TransactionHistoryItem] = []
     @State private var searchText: String = ""
+    @State private var amountDisplayMode: TransactionAmountDisplayMode = .discountGiven
     @State private var filterStartDate: Date? = nil
     @State private var filterEndDate: Date? = nil
     @State private var isShowingDatePicker: Bool = false
@@ -74,6 +82,8 @@ struct BusinessTransactionHistoryView: View {
                     // Search & Date Filter Bar (12pt radius)
                     VStack(alignment: .leading, spacing: 10) {
                         searchBar
+
+                        amountDisplayToggle
 
                         if let rangeLabel = activeDateRangeLabel {
                             activeDateFilterChip(label: rangeLabel)
@@ -162,7 +172,11 @@ struct BusinessTransactionHistoryView: View {
                 .foregroundColor(.kilalaInkSecondary)
                 .accessibilityHidden(true)
 
-            TextField("Search by name or ID number", text: $searchText)
+            TextField(
+                "Search by name or ID number",
+                text: $searchText,
+                prompt: Text("Search by name or ID number").foregroundStyle(Color.kilalaInk.opacity(0.4))
+            )
                 .font(.kilala(.callout))
                 .foregroundColor(.kilalaInk)
                 .tint(.kilalaGreen)
@@ -225,6 +239,42 @@ struct BusinessTransactionHistoryView: View {
         )
     }
 
+    private var amountDisplayToggle: some View {
+        HStack(spacing: 4) {
+            ForEach(TransactionAmountDisplayMode.allCases) { mode in
+                let isSelected = amountDisplayMode == mode
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        amountDisplayMode = mode
+                    }
+                } label: {
+                    Text(mode.rawValue)
+                        .font(.kilala(.footnote, weight: isSelected ? .bold : .semibold))
+                        .foregroundColor(isSelected ? .white : .kilalaInkSecondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(isSelected ? Color.kilalaGreen : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .frame(height: 36)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.kilalaMintBorder, lineWidth: 1)
+        )
+    }
+
     private func activeDateFilterChip(label: String) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
@@ -274,7 +324,10 @@ struct BusinessTransactionHistoryView: View {
     // MARK: - Chronological Date-Grouped Timeline
 
     private var transactionsListSection: some View {
-        ChronologicalTransactionList(groups: groupedTransactions) { item in
+        ChronologicalTransactionList(
+            groups: groupedTransactions,
+            amountDisplayMode: amountDisplayMode
+        ) { item in
             selectedTransaction = item
         }
     }
@@ -444,6 +497,7 @@ struct TransactionDateGroup: Identifiable {
 struct ChronologicalTransactionList: View {
     let groups: [TransactionDateGroup]
     var showCardNumber: Bool = false
+    var amountDisplayMode: TransactionAmountDisplayMode = .discountGiven
     let onSelect: (TransactionHistoryItem) -> Void
 
     var body: some View {
@@ -459,7 +513,8 @@ struct ChronologicalTransactionList: View {
                                     item: item,
                                     showCardNumber: showCardNumber,
                                     showTimeOnly: true,
-                                    horizontalPadding: 16
+                                    horizontalPadding: 16,
+                                    amountDisplayMode: amountDisplayMode
                                 )
                             }
                             .buttonStyle(.plain)
@@ -510,12 +565,44 @@ struct TransactionHistoryRow: View {
     let item: TransactionHistoryItem
     var showCardNumber: Bool = false
     var showTimeOnly: Bool = true
+    var showDateAndTime: Bool = false
     var horizontalPadding: CGFloat = 16
+    var amountDisplayMode: TransactionAmountDisplayMode = .netIncome
 
     private var formattedTimestamp: String {
-        showTimeOnly
+        if showDateAndTime {
+            return TransactionDateFormatting.formatDateAndTime(item.createdAt)
+        }
+        return showTimeOnly
             ? TransactionDateFormatting.formatTimeOnly(item.createdAt)
             : TransactionDateFormatting.formatCompact(item.createdAt)
+    }
+
+    private var primaryAmountText: String {
+        switch amountDisplayMode {
+        case .discountGiven:
+            return String(format: "₱%.2f", item.discountAmount)
+        case .netIncome:
+            return String(format: "₱%.2f", item.discountedAmount)
+        }
+    }
+
+    private var primaryAmountColor: Color {
+        switch amountDisplayMode {
+        case .discountGiven:
+            return .kilalaGreen
+        case .netIncome:
+            return .kilalaInk
+        }
+    }
+
+    private var secondaryAmountText: String {
+        switch amountDisplayMode {
+        case .discountGiven:
+            return String(format: "Net ₱%.2f", item.discountedAmount)
+        case .netIncome:
+            return String(format: "From ₱%.2f", item.originalAmount)
+        }
     }
 
     var body: some View {
@@ -532,14 +619,16 @@ struct TransactionHistoryRow: View {
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 4) {
-                Text(String(format: "₱%.2f", item.discountedAmount))
+                Text(primaryAmountText)
                     .font(.kilala(size: 16, weight: .bold, relativeTo: .callout))
-                    .foregroundColor(.kilalaInk)
+                    .foregroundColor(primaryAmountColor)
+                    .contentTransition(.numericText())
                     .lineLimit(1)
 
-                Text(String(format: "From ₱%.2f", item.originalAmount))
+                Text(secondaryAmountText)
                     .font(.kilala(size: 13, weight: .regular, relativeTo: .footnote))
                     .foregroundColor(.kilalaInkSecondary)
+                    .contentTransition(.numericText())
                     .lineLimit(1)
             }
 
@@ -581,21 +670,6 @@ struct TransactionDetailSheet: View {
     let transaction: TransactionHistoryItem
     @Environment(\.dismiss) private var dismiss
 
-    private var verificationStatus: (label: String, icon: String, fill: Color, foreground: Color) {
-        guard let rawStatus = transaction.status?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawStatus.isEmpty else {
-            return ("Verified", "checkmark.seal.fill", Color.kilalaStateValid.opacity(0.12), .kilalaStateValid)
-        }
-        let upper = rawStatus.uppercased()
-        if upper == "ACTIVE" || upper == "VERIFIED" {
-            return ("Verified", "checkmark.seal.fill", Color.kilalaStateValid.opacity(0.12), .kilalaStateValid)
-        }
-        if upper == "EXPIRED" {
-            return ("Expired", "clock.badge.exclamationmark.fill", .kilalaStateExpired, .kilalaInk)
-        }
-        return (rawStatus.capitalized, "xmark.octagon.fill", Color.kilalaStateInvalid.opacity(0.12), .kilalaStateInvalid)
-    }
-
     private var classificationBadge: (icon: String, fill: Color, foreground: Color) {
         switch transaction.privilegeType?.uppercased() {
         case "PWD":
@@ -616,19 +690,6 @@ struct TransactionDetailSheet: View {
                 ScrollView(showsIndicators: false) {
                     // Single Flat White 16pt Audit Card (No Nested Cards)
                     VStack(alignment: .leading, spacing: 16) {
-                        // Verification Status Header (Icon + Word + Brand State Color)
-                        HStack {
-                            KilalaStatusBadge(
-                                icon: verificationStatus.icon,
-                                label: verificationStatus.label,
-                                foreground: verificationStatus.foreground,
-                                background: verificationStatus.fill,
-                                cornerRadius: 8
-                            )
-
-                            Spacer()
-                        }
-
                         // Cardholder Identity
                         VStack(alignment: .leading, spacing: 4) {
                             Text("CARDHOLDER")
@@ -1080,6 +1141,13 @@ enum TransactionDateFormatting {
                     items: sortedItems
                 )
             }
+    }
+
+    static func formatDateAndTime(_ isoString: String) -> String {
+        guard let date = parse(isoString) else { return isoString }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy · h:mm a"
+        return formatter.string(from: date)
     }
 
     static func formatCompact(_ isoString: String) -> String {
